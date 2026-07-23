@@ -1,0 +1,3 @@
+package com.qinghe.life.vo;
+import lombok.Data; import java.time.LocalDateTime;
+@Data public class AdminDormCheckinVO { private Long id; private String realName; private String maskedStudentNo; private String collegeName; private String majorName; private String className; private String studentStatus; private String campusName; private String buildingName; private String roomNo; private String bedNo; private String assetSetNo; private LocalDateTime checkinTime; private LocalDateTime checkoutTime; private String checkoutReason; private String checkinStatus; private String maskedContactPhone; }

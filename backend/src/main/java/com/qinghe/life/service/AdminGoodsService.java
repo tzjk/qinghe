@@ -1,0 +1,2 @@
+package com.qinghe.life.service; import com.qinghe.life.common.PageResult; import com.qinghe.life.dto.*; import com.qinghe.life.vo.AdminGoodsVO; import org.springframework.web.multipart.MultipartFile;
+public interface AdminGoodsService { PageResult<AdminGoodsVO> page(AdminGoodsQuery q); AdminGoodsVO detail(Long id); AdminGoodsVO create(AdminGoodsSaveRequest r); AdminGoodsVO update(Long id,AdminGoodsSaveRequest r); void status(Long id,GoodsStatusRequest r); void stock(Long id,GoodsStockRequest r); AdminGoodsVO image(Long id,MultipartFile f); }

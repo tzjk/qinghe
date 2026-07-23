@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS qh_operate_log (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    user_id BIGINT DEFAULT NULL COMMENT '操作用户ID',
+    module VARCHAR(64) NOT NULL COMMENT '业务模块',
+    action VARCHAR(64) NOT NULL COMMENT '操作类型',
+    controller_class VARCHAR(160) NOT NULL COMMENT 'Controller类名',
+    controller_method VARCHAR(120) NOT NULL COMMENT 'Controller方法名',
+    request_path VARCHAR(255) NOT NULL COMMENT '请求路径',
+    http_method VARCHAR(16) NOT NULL COMMENT 'HTTP方法',
+    request_summary TEXT DEFAULT NULL COMMENT '请求参数脱敏摘要',
+    response_summary TEXT DEFAULT NULL COMMENT '返回结果脱敏摘要',
+    success TINYINT NOT NULL COMMENT '执行结果 1成功 0失败',
+    exception_summary VARCHAR(500) DEFAULT NULL COMMENT '异常脱敏摘要',
+    duration_ms BIGINT NOT NULL COMMENT '执行耗时毫秒',
+    ip VARCHAR(64) DEFAULT NULL COMMENT '客户端IP',
+    operate_time DATETIME NOT NULL COMMENT '操作时间',
+    PRIMARY KEY (id),
+    KEY idx_qh_operate_log_user_time (user_id, operate_time),
+    KEY idx_qh_operate_log_module_time (module, operate_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志表';
