@@ -534,4 +534,4 @@
 
 - 已仅修改 `DormAssetServiceImpl`：创建寝室和改名均在写入前按同一楼栋、同一寝室号查重，冲突返回 HTTP 409；未改表结构、SQL、学生入住、资产生成、二维码或学籍事务。
 - `mvn -Dtest=DormAssetIntegrationTest test` 已编译 204 个主源码和 23 个测试源码；运行因沙箱无法连接 `192.168.100.128:6379`，2 项测试均在 Redis 清理阶段报错，未进入重复寝室断言。未改 Redis 配置。
-- 待 Git 快照前仅暂存本轮代码和规划记录；保留用户已有 `.gitignore` 未暂存。
+- 已创建本地 Git 快照 `dd7149e fix: enforce dorm room number uniqueness`，仅提交服务修复和本轮规划记录；用户已有 `.gitignore` 修改保持未暂存、未提交。

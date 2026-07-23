@@ -6,11 +6,12 @@
 |---|---|---|
 | 1. 根因与范围确认 | completed | 已确认 `createRoom/updateRoom` 仅依赖数据库重复键异常；当前集成测试中该约束未生效，重复寝室号返回 200。 |
 | 2. 服务层查重修复 | completed | 已在同楼栋内以 MyBatis-Plus 主动检查寝室号，创建与改名冲突均返回 HTTP 409，并保留数据库重复键兜底。 |
-| 3. 专项验证、记录与 Git 快照 | partial | 专项主/测试源码编译完成；测试运行受沙箱 Redis 不可达阻断，待本机重跑。记录完成后仅提交本轮相关文件。 |
+| 3. 专项验证、记录与 Git 快照 | partial | 专项主/测试源码编译完成；测试运行受沙箱 Redis 不可达阻断，待本机重跑。代码与记录已创建本地 Git 快照 `dd7149e`。 |
 
 ### 本轮验证
 
 - `mvn -Dtest=DormAssetIntegrationTest test`：主源码 204 个、测试源码 23 个均编译；2 项测试在 `setUp` 阶段因 Redis `192.168.100.128:6379` 连接超时而报错，未执行业务断言。未修改 Redis、数据库或测试断言。
+- Git：已创建本地提交 `dd7149e fix: enforce dorm room number uniqueness`，仅包含服务修复和本轮计划/发现/进度记录；用户已有 `.gitignore` 修改未纳入提交。
 
 ### 本轮边界与结论
 

@@ -666,3 +666,4 @@
 - 根因是 `DormAssetServiceImpl.createRoom/updateRoom` 仅依赖数据库重复键异常；当前环境未触发该约束，因而重复寝室号可返回 200。
 - 已在两条写入路径增加 `(building_id, room_no)` 的 MyBatis-Plus 主动查重，排除编辑目标自身；冲突使用 `BusinessException(409, ...)`，确保 HTTP 409 与既有专项测试一致。数据库重复键捕获同样改为 409 兜底。
 - 专项测试编译成功，但运行在测试清理阶段因 Redis `192.168.100.128:6379` 连接超时而 2 errors，未触发业务断言；需在可访问 Redis 的本机执行同一专项复核。
+- 本地历史快照为 `dd7149e fix: enforce dorm room number uniqueness`；快照未包含用户已有 `.gitignore` 修改。
