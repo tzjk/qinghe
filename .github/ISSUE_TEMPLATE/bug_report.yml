@@ -1,0 +1,15 @@
+name: Bug report
+description: Report a reproducible defect in the project.
+title: "fix: "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include steps, expected result, and actual result. Do not include secrets.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Affected module
+      placeholder: backend, frontend, deploy, or docs

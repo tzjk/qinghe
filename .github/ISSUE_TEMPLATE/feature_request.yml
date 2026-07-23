@@ -1,0 +1,14 @@
+name: Feature request
+description: Propose a small, scoped improvement.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Problem and proposed outcome
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Impact and acceptance criteria
+      description: Note database, Redis, API, permission, and documentation impact if applicable.
