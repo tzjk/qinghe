@@ -650,3 +650,19 @@
 - Local and remote `main` both resolve to `68efe71a531757dc11c6bafa2f4c18d8dcda60c5` after the first push.
 - The remote's pre-existing `5690a1d Initial commit` remains in history. Its one-line README was reconciled in favor of the fuller local README without force-pushing.
 - The initial push command exceeded the shell wait limit, but the follow-up tracking push reported `Everything up-to-date`; hash verification confirms the push completed successfully.
+# 2026-07-23 Git ignore findings
+
+- The repository previously ignored build output, dependency caches, and IDE metadata but not local `.env` files or certificate/private-key formats.
+- `application.yml` and `.env.example` remain intentionally trackable templates; real credentials must continue to use local environment values rather than repository files.
+# 2026-07-23 宿舍管理需求只读复核
+
+- 需求 1 已具备核心实现：管理员按床位生成幂等资产套装，编号为 `楼栋编码 + 寝室号 + '-' + 床位号`（测试示例 `JA101-01`），同步生成随机 64 位令牌二维码；套装自动补齐床、床板、书桌、衣柜、凳子五件固定资产，并支持 PNG/ZIP 下载、停用和轮换二维码。
+- 需求 2 已具备完整服务端与页面链路：学生先录入实名、学号、学院、专业、班级、联系电话和校区，再以摄像头、二维码图片或手动内容解析床位二维码并确认入住。服务端校验当前实名资料、`ENROLLED` 学籍、校区一致性、资产健康、二维码状态和当前入住唯一性。
+- 需求 3 已具备管理员受保护的学籍管理（转专业、休学、退学、复学、毕业）及预览后二次确认的批量毕业、批量退宿、资产释放、二维码停用/轮换。系统不物理“清空入住信息”，而以批量退宿关闭当前入住、保留历史并释放套装，符合可追溯性。
+- 主要未收口风险：最新记录的完整 Maven 回归为 77 tests、1 failure、0 errors；`DormAssetIntegrationTest` 期待重复寝室号返回 409，实际为 200。该差异会削弱资产编号 `楼栋+寝室号+床位号` 的唯一性前提，故需求 1 不能判为完全验收通过。未在本次只读复核中运行服务、SQL 或测试。
+
+## 2026-07-23 重复寝室号 409 修复
+
+- 根因是 `DormAssetServiceImpl.createRoom/updateRoom` 仅依赖数据库重复键异常；当前环境未触发该约束，因而重复寝室号可返回 200。
+- 已在两条写入路径增加 `(building_id, room_no)` 的 MyBatis-Plus 主动查重，排除编辑目标自身；冲突使用 `BusinessException(409, ...)`，确保 HTTP 409 与既有专项测试一致。数据库重复键捕获同样改为 409 兜底。
+- 专项测试编译成功，但运行在测试清理阶段因 Redis `192.168.100.128:6379` 连接超时而 2 errors，未触发业务断言；需在可访问 Redis 的本机执行同一专项复核。

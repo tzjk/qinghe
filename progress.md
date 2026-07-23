@@ -521,3 +521,17 @@
 - `main` was initialized, connected to `https://github.com/tzjk/qinghe.git`, and safely merged with the existing README-only remote history.
 - The initial project commit is `b8e5f77`; merge commit `68efe71` is verified on both local `main` and `origin/main`.
 - Git ignored `.m2/` and `backend/.m2-*/`; no Maven cache, build output, `node_modules`, or frontend `dist` files were committed.
+# 2026-07-23 Git ignore hardening
+
+- Added ignore rules for local environment files and common private-key/certificate formats while retaining `.env.example` templates. Existing build, dependency-cache, and IDE exclusions remain unchanged.
+- Scope is limited to repository-ignore configuration and project records; no business code, service, database, build, commit, or push operation was performed.
+# 2026-07-23 宿舍管理需求只读复核
+
+- 已按三项原始需求静态核对资产二维码、学生扫码入住、管理员学籍与批量资产操作的后端、前端和测试记录；未修改代码、数据库、配置、服务或 Git。
+- 结论：三项主链路均已实现；资产编号唯一性相关的重复寝室 409 集成测试仍是唯一明确未收口风险。详情已记入 `findings.md`，本次仅审计，不执行修复。
+
+## 2026-07-23 重复寝室号 409 最小修复
+
+- 已仅修改 `DormAssetServiceImpl`：创建寝室和改名均在写入前按同一楼栋、同一寝室号查重，冲突返回 HTTP 409；未改表结构、SQL、学生入住、资产生成、二维码或学籍事务。
+- `mvn -Dtest=DormAssetIntegrationTest test` 已编译 204 个主源码和 23 个测试源码；运行因沙箱无法连接 `192.168.100.128:6379`，2 项测试均在 Redis 清理阶段报错，未进入重复寝室断言。未改 Redis 配置。
+- 待 Git 快照前仅暂存本轮代码和规划记录；保留用户已有 `.gitignore` 未暂存。
