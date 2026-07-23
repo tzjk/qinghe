@@ -645,3 +645,8 @@
 - Authenticated GitHub connector login is `tzjk`; the GitHub CLI is not installed, so the user-provided HTTPS remote is used directly.
 - `origin/main` already exists at `5690a1d` with a README-only initial commit. A normal merge with unrelated histories is required; force-push is out of scope.
 - Initial staging exposed local dependency caches (`.m2/` and `backend/.m2-order-test/`). Both are now ignored, and the latter was removed from the index without deleting local files.
+# 2026-07-23 GitHub publishing result
+
+- Local and remote `main` both resolve to `68efe71a531757dc11c6bafa2f4c18d8dcda60c5` after the first push.
+- The remote's pre-existing `5690a1d Initial commit` remains in history. Its one-line README was reconciled in favor of the fuller local README without force-pushing.
+- The initial push command exceeded the shell wait limit, but the follow-up tracking push reported `Everything up-to-date`; hash verification confirms the push completed successfully.

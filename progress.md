@@ -516,3 +516,8 @@
 - User explicitly authorized Git use and provided `https://github.com/tzjk/qinghe.git` as the target remote. The local repository was initialized on `main`, and `origin/main` was fetched before any push.
 - The remote contains only its existing `Initial commit` and a one-line README. Local README content will be retained when reconciling histories.
 - Added `.m2/` and `backend/.m2-*/` to `.gitignore`. Local Maven caches were removed from the Git index only and remain on disk.
+# 2026-07-23 GitHub initialization and first push completed
+
+- `main` was initialized, connected to `https://github.com/tzjk/qinghe.git`, and safely merged with the existing README-only remote history.
+- The initial project commit is `b8e5f77`; merge commit `68efe71` is verified on both local `main` and `origin/main`.
+- Git ignored `.m2/` and `backend/.m2-*/`; no Maven cache, build output, `node_modules`, or frontend `dist` files were committed.

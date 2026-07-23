@@ -882,3 +882,7 @@
 - 指定 `Q:\.m2` 不可创建。替代环境的完整 `mvn clean test` 运行 76 项，初次 2 failures/1 error，修正测试夹具后为 2 failures/0 errors；入住筛选已在专项验证通过，剩余重复寝室 409 断言要求改变既有寝室唯一性实现或数据库约束，超出本轮边界。不得标记完成。
 
 - 当前源码的最终 `mvn clean package -DskipTests` 已再次成功（204 主源码、23 测试源码、JAR）；该结果不改变完整回归未达 0 failures/0 errors 的阻断状态。
+# 2026-07-23 GitHub initialization and first push completed
+
+- Result: `main` is initialized locally, tracks `origin/main` at `https://github.com/tzjk/qinghe.git`, and both sides resolve to `68efe71a531757dc11c6bafa2f4c18d8dcda60c5`.
+- Scope: project files plus project-level `.agents` skills were committed. Maven caches, build output, frontend dependencies, and distribution output remain excluded by `.gitignore`.
