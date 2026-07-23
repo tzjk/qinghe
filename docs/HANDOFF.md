@@ -532,6 +532,22 @@ ORDER BY table_name, constraint_name;
 - 新增不接收客户端 `buildingType`、ID、时间或管理员号；服务端固定宿舍楼类型并校验启用校区、同校区编码/名称唯一。编辑不允许迁移校区或改变类型，已有下级资源/入住历史时编码冻结；当前入住时不能停用；删除无级联且需无全部关联数据。
 - 前端已提供校区、状态、关键字筛选，新增/编辑/启停/删除确认、寝室跳转、无校区禁用和新建后自动选中；不要求手输 campusId 或 buildingId。
 - 验证：楼栋+入住专项 11/0/0/0；前端构建成功（1731 modules）；后端默认缓存打包成功。完整回归未通过：首次为 76 项、2 failures、1 error，修复测试夹具后为 76 项、2 failures、0 errors；其中入住筛选夹具已由专项验证通过，剩余重复寝室 409 断言需在不违反“不得改寝室业务规则”的前提下另获授权处理。`Q:\.m2` 不可创建，故用户指定的 Maven 缓存命令未能执行。
+# 2026-07-23 Git/GitHub 工程治理阶段一（完成，等待审核）
+
+- 本轮范围仅为 Git/GitHub 工程治理配置和文档：未修改业务代码、数据库结构、SQL、服务状态、现有 Git 历史或远程配置；未执行 `git init`、暂存、提交、推送、标签或任何 force push。
+- 已完成当前 Git/远程/工作区审计及不回显值的敏感信息扫描；未发现已跟踪的构建产物、大文件或敏感字段候选，也未发现根目录 `.env`、日志、`application*.yml` 或本地密钥配置候选。全部可达 Git 历史的同类扫描也未命中。
+- 已落盘 `.gitignore`、`.gitattributes`、`.editorconfig`、`docs/GIT_WORKFLOW.md`、`CONTRIBUTING.md`、PR/Issue 模板、`docs/RELEASE_PROCESS.md`、`CHANGELOG.md` 和最小 GitHub Actions CI，并同步 README/规划/进度/发现记录。
+- 验证已完成：CI/Issue YAML 可解析；后端 `mvn -B -ntp -DskipTests package` 成功；前端 `npm ci` 成功且生产构建经授权重试成功（1732 modules）。完整 MySQL/Redis 集成测试未运行。`backend/.m2/` 构建缓存已被精确忽略，未删除。
+- 阶段二门槛未满足：虽然远程已存在，但仍需用户明确确认目标 GitHub 地址、认证可用，并另行书面授权 `git add`、`git commit` 与 `git push`；若审计发现已跟踪的真实凭据，须先轮换凭据并停止推送。
+
+# 2026-07-23 订单生命周期状态模型与候选迁移（进行中）
+
+- 本轮只统一订单状态、准备候选迁移和设计文档，并复验原 `POST /api/orders` 创建能力；不实现支付、取消、库存恢复、管理员订单、定时任务、优惠券、Redis Stream、WebSocket、报表或订单页面。
+- 静态基线：`qh_order.status` 为 `VARCHAR(20)`，订单创建写入 `PENDING_PAY`；不得新增 `PENDING_PAYMENT`。金额保持 `total_amount`（商品原始总额）和 `pay_amount`（最终应付金额），不新增 `goods_amount`。
+- `order_core_increment.sql` 已静态定义 `cancel_reason`、`cancel_time`、`completed_time`；候选增量不得重复这些列，只评估 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 与 `(status, pay_expire_time)` 索引。所有 SQL 仅由 DataGrip 人工审核和执行。
+- 真实库尚未核验。用户需在 DataGrip 手工执行 `SHOW CREATE TABLE qh_order;` 和 `SHOW INDEX FROM qh_order;`；在获得结果前，`Order` 实体不添加候选列，且不运行依赖其存在的集成测试。
+- 后续取消事务设计要求“条件更新状态、恢复库存、取消成功日志”同处订单业务 `REQUIRED` 事务，直接使用既有 `qh_operate_log`；不得让通用 AOP 的 `REQUIRES_NEW` 成功日志同时生效，也不得新建订单日志表。
+
 # 2026-07-20 个人中心姓名显示修复（代码完成，验证部分阻塞）
 
 - 根因：旧 `/api/user/me` 只返回 Redis 会话内的账号 `UserDTO`，未查询当前 `qh_student_profile`；个人中心和导航又只读取 `nickname`，导致实名已建档仍显示账号昵称，且误将可空 `username` 呈现为用户信息。

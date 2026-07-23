@@ -640,6 +640,12 @@
 - 本会话 `Test-Path Q:\backend` 与 `Test-Path Q:\.m2` 均为 `False`，指定 Maven 验证命令尚不可运行；未创建驱动器映射、未改 Maven/Redis 配置。
 - 受控专项 Maven 测试结果为 6/0/0。实际工作区完整回归为 77/1/0：唯一失败为范围外 `DormAssetIntegrationTest` 的宿舍资产状态断言（期望 409、实际 200），与本轮姓名查询、DTO 映射、个人中心和导航修改无直接调用关系；按约束未以降低断言或改动范围外逻辑换取通过。
 - 用户指定的跳过测试打包尚未运行：`Q:` 路径不存在，实际工作区的受控打包申请又被平台额度限制拒绝。前端构建已成功，后端主/测试源码均在完整回归中通过编译。
+# 2026-07-23 订单生命周期状态模型：基线发现
+
+- 订单创建 DTO 仅接收购物车项、地址和备注；订单实体没有客户端金额、状态或用户 ID 输入边界。现有金额语义正确：`total_amount` 是商品原价总额，`pay_amount` 是最终应付金额，不能新增 `goods_amount`。
+- 当前 `qh_order.status` 默认值为 `PENDING_PAY`，本轮必须以该既有值作为唯一待支付编码，不能引入 `PENDING_PAYMENT`；已有 `order_core_increment.sql` 提供 `cancel_reason`、`cancel_time`、`completed_time`，但不能假设其已在运行库执行。
+- 当前本地 ref 和已获取的远端跟踪 ref 不包含 `develop`，且功能开始前就有与订单无关的未提交治理文件。必须在不污染这些改动的前提下确认 feature 分支基线后，再实施与提交。
+
 # 2026-07-23 GitHub publishing findings
 
 - Authenticated GitHub connector login is `tzjk`; the GitHub CLI is not installed, so the user-provided HTTPS remote is used directly.
@@ -661,9 +667,37 @@
 - 需求 3 已具备管理员受保护的学籍管理（转专业、休学、退学、复学、毕业）及预览后二次确认的批量毕业、批量退宿、资产释放、二维码停用/轮换。系统不物理“清空入住信息”，而以批量退宿关闭当前入住、保留历史并释放套装，符合可追溯性。
 - 主要未收口风险：最新记录的完整 Maven 回归为 77 tests、1 failure、0 errors；`DormAssetIntegrationTest` 期待重复寝室号返回 409，实际为 200。该差异会削弱资产编号 `楼栋+寝室号+床位号` 的唯一性前提，故需求 1 不能判为完全验收通过。未在本次只读复核中运行服务、SQL 或测试。
 
+## 2026-07-23 Git/GitHub 工程治理审计
+
+- Git 状态：当前仓库在 `main`，`origin` 已配置为 GitHub HTTPS 地址；本地 HEAD 为 `a3df416`，远程跟踪点为 `a89c78c`，工作区开始时仅 `.gitignore` 处于修改状态。
+- 跟踪文件审计：构建产物、依赖目录、IDE 文件、日志、JAR/压缩包和大文件均未被跟踪。根目录未发现 `.env`、日志、`application*.yml`、本地密钥或 dump 候选文件。
+- 敏感模式审计：对已跟踪文本及全部可达提交历史按 Redis/MySQL/OSS/API/JWT/Token/私钥/完整 `qrToken` 字段模式扫描，未命中可报告候选；扫描过程未回显值。新增忽略规则不被视为已跟踪凭据的补救措施。
+- CI 依据：`pom.xml` 声明 Java 8；锁定的 Vite 5.4.21 要求 Node `^18.0.0 || >=20.0.0`，当前本机 Node 为 22.23.1，因此 CI 固定 Java 8 和 Node 22。后端 CI 跳过环境依赖测试，仅编译/打包；Redis 集成测试仍需本机真实环境。
+- 验证：CI/Issue YAML 解析通过；后端不运行测试的 Maven package 成功；前端 `npm ci` 成功，受限沙箱首次无法读取既有 Vite 配置，授权重试后生产构建成功（1732 modules）。本地 package 生成的 `backend/.m2/` 缓存已被精确忽略，未删除。
+
+## 2026-07-23 Git/GitHub 阶段二远程认证门禁
+
+- 本地确认：当前为 Git 仓库，当前分支 `main`，`origin` 的 fetch/push 地址均为用户确认的 `https://github.com/tzjk/qinghe.git`；`main` 比 `origin/main` 多 2 个既有提交。
+- 阻断：经授权的 `git ls-remote origin` 在 64 秒后超时，未返回远程引用，不能据此确认私有仓库认证成功或远程可达。此结果不是“仓库不存在”的结论。
+- 安全停止：未执行 fetch、暂存、提交、推送、develop 创建或远程地址修改；未审查新暂存内容，也未产生新的提交。恢复后必须从远程认证门禁重新开始。
+
 ## 2026-07-23 重复寝室号 409 修复
 
 - 根因是 `DormAssetServiceImpl.createRoom/updateRoom` 仅依赖数据库重复键异常；当前环境未触发该约束，因而重复寝室号可返回 200。
 - 已在两条写入路径增加 `(building_id, room_no)` 的 MyBatis-Plus 主动查重，排除编辑目标自身；冲突使用 `BusinessException(409, ...)`，确保 HTTP 409 与既有专项测试一致。数据库重复键捕获同样改为 409 兜底。
 - 专项测试编译成功，但运行在测试清理阶段因 Redis `192.168.100.128:6379` 连接超时而 2 errors，未触发业务断言；需在可访问 Redis 的本机执行同一专项复核。
 - 本地历史快照为 `dd7149e fix: enforce dorm room number uniqueness`；快照未包含用户已有 `.gitignore` 修改。
+# 订单生命周期状态模型与候选迁移（2026-07-23）
+
+## 静态审计（未执行真实数据库 SQL）
+
+- 源码基线 `qh_order` 使用字符串 `status`，订单创建写入 `PENDING_PAY`；尚无统一订单状态枚举，当前真实接口仍只有 `POST /api/orders`，本轮不会新增支付、取消或管理员接口与页面。
+- `qh_order` 基线字段为订单/用户/店铺/地址、收件与配送地址快照、`total_amount`、`discount_amount`、`pay_amount`、`status`、`remark` 和通用时间列。已存在的 `order_core_increment.sql` 是人工审核脚本，静态文本仅新增 `cancel_reason`、`cancel_time`、`completed_time` 等，未出现 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time`；本轮不得把这一静态结论说成实时数据库字段事实。
+- 现有 `Order` 实体已映射结构化地址与 `delivery_fee`，但尚未映射取消/完成字段；`OrderMapper`、`OrderItemMapper` 只有 BaseMapper。订单创建事务与条件扣库存、购物车精确清理已经落地，必须保持。
+- `OperateLogAspect` 在 Controller 返回后调用 `OperateLogServiceImpl.save`，而该服务为 `REQUIRES_NEW`。这不满足生命周期取消“状态更新、库存释放和成功日志同一业务事务”的要求；本轮服务应直接写既有 `OperateLogMapper`，并避免为同一动作叠加 AOP 成功日志。
+- `AdminContext` 与 `UserContext` 已独立；`/api/admin/**` 由管理员拦截器保护。管理员订单操作应仅从 `AdminContext.getAdminId()` 取操作者。
+
+## Git 与环境记录
+
+- 用户明确授权 Git 流程。初始 `git status -sb` 显示当前分支 `main...origin/main [ahead 2]`，并有用户既有改动：`.gitignore`、`README.md`、`docs/HANDOFF.md`、`findings.md`、`progress.md`、`task_plan.md` 及未跟踪 `.editorconfig`、`.gitattributes`、`.github/`、`CHANGELOG.md`、`CONTRIBUTING.md`、`docs/GIT_WORKFLOW.md`、`docs/RELEASE_PROCESS.md`。本轮不得覆盖或整体暂存这些内容。
+- `git fetch origin --prune` 首先因沙箱无法写 `.git/FETCH_HEAD` 失败；获准提升后执行约 64 秒仍超时。该命令未完成，尚不能声称已基于最新 `develop` 创建功能分支；后续需采用不同的远程可达性检查或由用户恢复网络。

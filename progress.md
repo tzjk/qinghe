@@ -521,6 +521,12 @@
 - `main` was initialized, connected to `https://github.com/tzjk/qinghe.git`, and safely merged with the existing README-only remote history.
 - The initial project commit is `b8e5f77`; merge commit `68efe71` is verified on both local `main` and `origin/main`.
 - Git ignored `.m2/` and `backend/.m2-*/`; no Maven cache, build output, `node_modules`, or frontend `dist` files were committed.
+# 2026-07-23 订单生命周期状态模型：静态审计
+
+- 已开始唯一里程碑的只读基线核查：普通订单创建仍在唯一的 `OrderServiceImpl#create` 路径，`OrderController` 目前只有创建接口，实体金额字段是 `totalAmount`、`discountAmount`、`deliveryFee`、`payAmount`，未发现 `goodsAmount`。
+- 建表 SQL 仍使用旧状态 `PENDING_PAY`；`order_core_increment.sql` 记录了已生成但未执行的取消/完成字段增量。按本轮约束未连接或执行真实数据库 SQL。
+- Git 前置条件待解决：当前工作区存在既有未提交的治理文档改动；`git branch -a` 仅显示 `main` 与 `origin/main`，尚无可作为要求基线的 `develop`。未创建分支、未暂存、未提交，也未修改既有改动。
+
 # 2026-07-23 Git ignore hardening
 
 - Added ignore rules for local environment files and common private-key/certificate formats while retaining `.env.example` templates. Existing build, dependency-cache, and IDE exclusions remain unchanged.
@@ -530,8 +536,28 @@
 - 已按三项原始需求静态核对资产二维码、学生扫码入住、管理员学籍与批量资产操作的后端、前端和测试记录；未修改代码、数据库、配置、服务或 Git。
 - 结论：三项主链路均已实现；资产编号唯一性相关的重复寝室 409 集成测试仍是唯一明确未收口风险。详情已记入 `findings.md`，本次仅审计，不执行修复。
 
+## 2026-07-23 Git/GitHub 工程治理阶段一
+
+- 已按授权完成只读 Git 审计：当前为 Git 仓库，分支为 `main`，存在 `origin`，本地 HEAD 比远程 `main` 多 2 个提交；工作区原有且仍保留的未提交文件为 `.gitignore`。
+- 已审计已跟踪路径：未发现 `target`、`dist`、`node_modules`、虚拟环境、日志、JAR、IDE 文件或大于 1 MiB 的文件；未发现 `.env`、日志、`application*.yml` 或本地密钥配置文件。已跟踪内容及全部可达提交历史的敏感字段模式均未命中，扫描未输出任何密钥值。
+- 已创建或完善 Git 忽略/属性/编辑器规则、协作与发布文档、PR/Issue 模板和最小 CI；CI 的后端只执行不依赖 Redis 的打包，完整 Redis 集成测试明确保留给本机。
+- 校验完成：CI 与 Issue YAML 均可解析；`mvn.cmd -B -ntp -DskipTests package` 成功（测试按设计跳过）；`npm.cmd ci` 成功，前端构建在受限沙箱中因读取既有 Vite 配置受拒绝，按授权以同一命令重试后成功（1732 modules）。仅保留既有第三方 PURE 注释和大 chunk 警告。
+- 本地构建产生的 `backend/.m2/` 缓存曾显示为未跟踪，已仅补充根 `.gitignore` 的 `/backend/.m2/` 规则，未删除任何文件。阶段一现已完成，不会执行初始化、暂存、提交或推送。
+
+## 2026-07-23 Git/GitHub 工程治理阶段二（认证阻断）
+
+- 用户已确认目标私有远程为 `https://github.com/tzjk/qinghe.git` 并授权阶段二。只读基线确认当前为 `main...origin/main [ahead 2]`，现有 `origin` 的 fetch/push 地址均与目标一致。
+- `git ls-remote origin` 在 64 秒内超时，未取得远程引用或 GitHub 身份认证成功证据。按停止条件，未执行 `git fetch`、`git add`、`git commit`、`git push`、创建 `develop`、修改远程或任何历史操作。
+- 需用户在本机恢复 GitHub HTTPS 凭据/网络可达性后重新授权本阶段；本次未产生新的 Git 提交或远程变更。
+
 ## 2026-07-23 重复寝室号 409 最小修复
 
 - 已仅修改 `DormAssetServiceImpl`：创建寝室和改名均在写入前按同一楼栋、同一寝室号查重，冲突返回 HTTP 409；未改表结构、SQL、学生入住、资产生成、二维码或学籍事务。
 - `mvn -Dtest=DormAssetIntegrationTest test` 已编译 204 个主源码和 23 个测试源码；运行因沙箱无法连接 `192.168.100.128:6379`，2 项测试均在 Redis 清理阶段报错，未进入重复寝室断言。未改 Redis 配置。
 - 已创建本地 Git 快照 `dd7149e fix: enforce dorm room number uniqueness`，仅提交服务修复和本轮规划记录；用户已有 `.gitignore` 修改保持未暂存、未提交。
+# 2026-07-23 订单生命周期状态模型与候选迁移
+
+- 已启用 `planning-with-files`，本轮仅覆盖状态枚举、候选迁移、设计文档、既有订单创建验证和 Git 分支收口；明确不实现支付、取消、库存恢复、管理员订单、Spring Task、优惠券、Redis Stream、WebSocket、报表或订单页面。
+- 已完成静态源码和迁移文本审计：当前创建状态为 `PENDING_PAY`；未实现订单列表/详情、支付、取消和管理员订单操作；现有 `order_core_increment.sql` 静态文本不含 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time`。本轮禁止真实数据库 SQL，故现场字段存在性待人工审核迁移后只读复核。
+- 已识别日志事务边界：现有 AOP 日志使用 `REQUIRES_NEW`，生命周期成功日志需在订单服务事务内直接复用 `qh_operate_log` 写入，防止取消回滚后留下成功日志。
+- Git 初检发现治理和订单审计记录未提交，已按提交语义分组。远程 `fetch` 已成功，`main...origin/main` 无差异，且尚不存在本地或远程 `develop`；后续按用户授权建立该分支后再创建功能分支。

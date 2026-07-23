@@ -1,3 +1,21 @@
+# 订单生命周期状态模型与候选迁移（2026-07-23）
+
+**本轮唯一里程碑：** 安全收口 Git 工作区，建立 `develop` 与 `feature/order-lifecycle-schema`，统一订单状态枚举，准备人工审核的生命周期候选迁移，并验证既有普通订单创建。不得实现支付、取消、库存恢复、管理员接单、定时任务、优惠券、Redis Stream、WebSocket、营业报表或订单前端页面；不得执行真实数据库 SQL。
+
+| 阶段 | 状态 | 交付与判定 |
+|---|---|---|
+| 1. Git 收口、同步与分支基线 | in_progress | 精确提交治理文件和订单审计记录；确认 `main` 同步后建立并推送 `develop`，再从其创建功能分支。 |
+| 2. 静态结构与状态模型 | in_progress | 复核 `PENDING_PAY`、金额语义、既有迁移与订单创建路径；创建统一 `OrderStatus`，不新增状态变更接口。 |
+| 3. 候选迁移与设计文档 | pending | 只生成等待 DataGrip 人工审核的脚本和设计记录；不向实体加入未经真实 MySQL 核验的字段。 |
+| 4. 原订单创建验证与功能提交 | pending | 仅运行指定 compile 和 `OrderCreateIntegrationTest`；记录真实结果并提交、推送功能分支。 |
+
+### 本轮门禁
+
+- `PENDING_PAY` 是当前且唯一待支付状态编码；不得引入 `PENDING_PAYMENT`，不得修改现有数据库状态值。
+- `total_amount` 是商品原始总额，`pay_amount` 是最终应付金额；不得新增 `goods_amount`。
+- 数据库仍待用户在 DataGrip 执行 `SHOW CREATE TABLE qh_order;` 与 `SHOW INDEX FROM qh_order;` 的只读核验。候选脚本不是已执行迁移。
+- 订单取消的后续设计须使条件状态更新、库存恢复和成功操作日志同处一个 `REQUIRED` 订单事务，并绕开通用 AOP 的 `REQUIRES_NEW` 成功日志，避免重复或脱离事务的日志。
+
 # 宿舍寝室号唯一性与资产编号前提修复（2026-07-23）
 
 **本轮唯一里程碑：** 修复重复寝室号未返回 HTTP 409 的服务层缺口，保障“楼栋编码+寝室号+床位号”资产套装编号的唯一性前提；仅修改寝室新建/编辑的查重与相关记录，运行专项测试后创建 Git 本地历史快照。不执行 SQL、不修改表结构、不启动或停止服务、不变更学生入住、退宿、资产二维码生成或学籍事务。
@@ -906,3 +924,74 @@
 
 - Result: `main` is initialized locally, tracks `origin/main` at `https://github.com/tzjk/qinghe.git`, and both sides resolve to `68efe71a531757dc11c6bafa2f4c18d8dcda60c5`.
 - Scope: project files plus project-level `.agents` skills were committed. Maven caches, build output, frontend dependencies, and distribution output remain excluded by `.gitignore`.
+
+# 2026-07-23 Git and GitHub engineering governance - phase 1
+
+**Goal:** audit the existing repository and create only sustainable Git/GitHub configuration and documentation. No Git initialization, staging, commit, or push is permitted in this milestone.
+
+| Phase | Status | Acceptance condition |
+|---|---|---|
+| 1. Read-only repository and secret audit | completed | Existing Git status, remote, tracked artifacts/large files, local config candidates, and tracked secret patterns recorded without exposing secret values. |
+| 2. Repository governance configuration | completed | `.gitignore`, `.gitattributes`, `.editorconfig`, PR/Issue templates, contribution, workflow, release, and changelog files created. |
+| 3. Documentation synchronization and validation | completed | README, handoff, findings, and progress synchronized; CI YAML parsed and local non-integration builds checked. |
+
+## Boundaries
+
+- Do not modify business code, database schema, SQL, external services, Git history, or existing remote configuration.
+- Do not run `git init`, `git add`, `git commit`, `git push`, force push, history rewriting, or tag creation in phase 1.
+- Stage 2 requires a clean secret/artifact audit, explicit GitHub remote confirmation, available authentication, and explicit authorization for commit and push.
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| PowerShell path/variable interpolation errors in the first audit scripts | 2 | Re-ran read-only checks with character-safe path handling and no secret-value output. |
+| Large multi-file patch call stopped responding | 1 | Verified partial writes, then completed configuration with smaller patches; no files were overwritten outside scope. |
+| `backend/.m2/` cache remained unignored after local package verification | 1 | Added the exact `/backend/.m2/` ignore rule; directory was not deleted. |
+
+# 2026-07-23 Git and GitHub engineering governance - phase 2
+
+**Goal:** after explicit authorization, commit the phase-1 repository-governance baseline once, fast-forward push `main`, then create or confirm and push `develop` without rewriting history.
+
+| Phase | Status | Acceptance condition |
+|---|---|---|
+| 1. Remote/authentication and divergence gate | blocked | Approved origin was confirmed locally, but `git ls-remote origin` timed out without authentication or remote-reference evidence; no fetch or write operation may proceed. |
+| 2. Pre-push review and baseline commit | pending | Review unpushed commits, staged stat, artifacts, and sensitive patterns; create exactly one governance commit only if needed. |
+| 3. Fast-forward push and develop upstream | pending | Push `main` without force; create `develop` only when absent and set its upstream. |
+| 4. Record final state | pending | Update progress, findings, and handoff with factual push/upstream results, then stop. |
+
+## Boundaries
+
+- Never run `git init`, reset, clean, rebase, filter/rewrite operations, force push, tag creation, or release creation.
+- The approved private remote is `https://github.com/tzjk/qinghe.git`; do not replace a different existing origin without reporting it first.
+- Stop immediately on an authentication/private-repository access failure or non-fast-forward divergence.
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| `git ls-remote origin` timed out after 64 seconds with no remote response | 1 | Stopped phase 2 before `fetch`, staging, commit, push, branch creation, or remote mutation. User must restore local GitHub HTTPS/credential connectivity, then authorize a fresh attempt. |
+
+# 2026-07-23 订单生命周期与超时未支付取消
+
+**本轮唯一里程碑：** 在已完成普通订单创建的基础上，统一订单状态并实现模拟支付、取消、管理员履约状态流转、超时任务、幂等库存释放、现有操作日志和全量测试；不重写普通下单事务，不连接或执行真实数据库 SQL。
+
+| 阶段 | 状态 | 验收条件 |
+|---|---|---|
+| 1. 基线、分支与真实结构核查 | in_progress | 订单代码、迁移脚本/数据库设计和测试已核查；功能分支从可确认的 develop 基线创建，且既有未提交改动不进入本功能提交。 |
+| 2. 状态机与迁移设计 | pending | 状态、支付期限、索引与日志语义在代码、迁移脚本和文档中一致；不新增 goods_amount 或日志表。 |
+| 3. 生命周期实现 | pending | 用户支付/取消、管理员接单/配送/完成、超时任务和条件更新全部落在既有订单模块内。 |
+| 4. 并发与专项测试 | pending | 覆盖支付、取消、过期、所有权、库存仅一次释放、竞争与权限边界。 |
+| 5. 全量回归与交付提交 | pending | 订单专项和完整回归均执行并如实记录；仅暂存本功能文件，以指定信息提交，不建 Tag、不合并 main、不 force push。 |
+
+## 本轮边界与已知前置条件
+
+- 已确认当前 `qh_order` 建表默认状态为旧值 `PENDING_PAY`；当前 `Order` 实体没有支付期限、支付/接单/配送时间字段。`order_core_increment.sql` 已有取消与完成时间字段，但文档标注为未执行。
+- 当前本地仅有 `main`，已知远端引用仅有 `origin/main`；尚未发现 `develop`。当前工作区已有治理文档相关未提交改动，不能暂存、覆盖或混入本功能提交。
+- 本轮禁止执行真实数据库 SQL，因此“真实字段”只可由当前实体、建表 SQL、增量脚本和测试基线交叉核查；不会对运行中的 `qh_order` 发出查询。
+
+## 本轮错误记录
+
+| 错误 | 尝试 | 处理 |
+|---|---:|---|
+| `git show-ref --remotes` 在当前 Git 版本不支持 | 1 | 已改用 `git branch -a` 与后续精确 ref 查询；不重复相同命令。 |
