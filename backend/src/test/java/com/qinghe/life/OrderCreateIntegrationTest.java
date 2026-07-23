@@ -12,6 +12,7 @@ import com.qinghe.life.entity.OrderItem;
 import com.qinghe.life.entity.Shop;
 import com.qinghe.life.entity.User;
 import com.qinghe.life.entity.UserAddress;
+import com.qinghe.life.enums.OrderStatus;
 import com.qinghe.life.mapper.BuildingMapper;
 import com.qinghe.life.mapper.CartMapper;
 import com.qinghe.life.mapper.CampusMapper;
@@ -241,7 +242,7 @@ class OrderCreateIntegrationTest {
         assertEquals(0, new BigDecimal("0.00").compareTo(order.getDiscountAmount()));
         assertEquals(0, new BigDecimal("0.00").compareTo(order.getDeliveryFee()));
         assertEquals(0, new BigDecimal("25.02").compareTo(order.getPayAmount()));
-        assertEquals("PENDING_PAY", order.getStatus());
+        assertEquals(OrderStatus.PENDING_PAY.getCode(), order.getStatus());
         assertEquals(activeCampus.getCampusName(), order.getCampusName());
         assertEquals(activeBuilding.getBuildingName(), order.getBuildingName());
         assertEquals(2, orderItemMapper.selectCount(Wrappers.<OrderItem>lambdaQuery().eq(OrderItem::getOrderId, orderId)).intValue());

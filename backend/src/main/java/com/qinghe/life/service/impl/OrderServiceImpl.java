@@ -10,6 +10,7 @@ import com.qinghe.life.entity.Order;
 import com.qinghe.life.entity.OrderItem;
 import com.qinghe.life.entity.Shop;
 import com.qinghe.life.entity.UserAddress;
+import com.qinghe.life.enums.OrderStatus;
 import com.qinghe.life.exception.BusinessException;
 import com.qinghe.life.mapper.CampusMapper;
 import com.qinghe.life.mapper.BuildingMapper;
@@ -37,7 +38,6 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class OrderServiceImpl implements OrderService {
     private static final String ON_SALE = "ON_SALE";
-    private static final String PENDING_PAY = "PENDING_PAY";
     private static final BigDecimal ZERO_AMOUNT = new BigDecimal("0.00");
     private static final DateTimeFormatter ORDER_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
 
@@ -155,7 +155,7 @@ public class OrderServiceImpl implements OrderService {
         order.setDiscountAmount(discountAmount);
         order.setDeliveryFee(deliveryFee);
         order.setPayAmount(payAmount);
-        order.setStatus(PENDING_PAY);
+        order.setStatus(OrderStatus.PENDING_PAY.getCode());
         order.setRemark(trimToNull(request.getRemark()));
         orderMapper.insert(order);
         for (OrderItem item : orderItems) {
