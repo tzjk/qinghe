@@ -1,5 +1,13 @@
 # 接口契约（M0）
 
+## 2026-07-23 订单状态模型与接口边界
+
+当前真实订单接口只有 `POST /api/orders`；本轮不创建支付、取消、管理员订单或状态变更端点。订单创建响应不因状态枚举而扩展字段。
+
+服务端创建订单统一写入 `OrderStatus.PENDING_PAY.getCode()`，即数据库已有编码 `PENDING_PAY`。状态机合法流转预定义为：`PENDING_PAY -> PAID -> ACCEPTED -> DELIVERING -> COMPLETED`，以及 `PENDING_PAY -> CANCELLED`；`PENDING_PAYMENT` 不是合法编码。
+
+候选时间字段和 `(status, pay_expire_time)` 索引等待真实表结构人工核验，当前 API 不接受或返回它们。
+
 ## 2026-07-20 学生首次建档多校区与 Redis 测试分层契约
 
 - `PUT /api/student/profile` 在学生无当前 `current_flag=1` 资料时必须提交 `realName`、`studentNo`、`campusId`、`collegeName`、`majorName`、`className` 和合法 `contactPhone`。`campusId` 必须指向真实且 `status=1` 的 `qh_campus`；`campusName` 不属于请求契约，服务端自行读取名称。

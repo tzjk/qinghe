@@ -1,5 +1,11 @@
 # 后端接口说明（M2）
 
+## 2026-07-23 订单状态模型与候选迁移
+
+- 当前真实订单接口仍只有 `POST /api/orders`。它只接收 `cartItemIds`、`addressId`、可选 `remark`，服务端写入 `PENDING_PAY`；本轮未新增支付、取消、管理员订单或订单页面接口。
+- `OrderStatus` 统一定义 `PENDING_PAY`（待支付）、`PAID`（已支付）、`ACCEPTED`（已接单）、`DELIVERING`（配送中）、`COMPLETED`（已完成）、`CANCELLED`（已取消）。合法流转为 `PENDING_PAY -> PAID -> ACCEPTED -> DELIVERING -> COMPLETED`，以及 `PENDING_PAY -> CANCELLED`；不得使用 `PENDING_PAYMENT`。
+- `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 仅存在于候选人工迁移，尚未核验真实 MySQL，因而不在当前请求或响应中出现。
+
 ## 2026-07-20 学生首次建档多校区与 Redis 测试分层
 
 - `PUT /api/student/profile` 首次建档请求增加 `campusId`。服务端仅以 `GET /api/campuses` 返回的真实启用校区（`qh_campus.status=1`）作为可选值；不存在、停用或缺失的编号均拒绝。请求不接收也不信任 `campusName`。

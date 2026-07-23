@@ -535,3 +535,9 @@
 - 已仅修改 `DormAssetServiceImpl`：创建寝室和改名均在写入前按同一楼栋、同一寝室号查重，冲突返回 HTTP 409；未改表结构、SQL、学生入住、资产生成、二维码或学籍事务。
 - `mvn -Dtest=DormAssetIntegrationTest test` 已编译 204 个主源码和 23 个测试源码；运行因沙箱无法连接 `192.168.100.128:6379`，2 项测试均在 Redis 清理阶段报错，未进入重复寝室断言。未改 Redis 配置。
 - 已创建本地 Git 快照 `dd7149e fix: enforce dorm room number uniqueness`，仅提交服务修复和本轮规划记录；用户已有 `.gitignore` 修改保持未暂存、未提交。
+
+## 2026-07-23 订单生命周期状态模型与候选迁移
+
+- 已创建 `OrderStatus` 并以其 `PENDING_PAY` 编码替换普通订单创建和订单创建专项测试中的待支付魔法字符串；状态机只定义，不新增支付、取消、管理员、定时或前端功能。
+- 已创建候选人工迁移 `backend/src/main/resources/sql/order_lifecycle_schema_increment.sql`，并更新订单状态机、API、接口契约、数据库和订单设计文档。候选脚本未执行，`Order` 实体未添加新列。
+- 已确认 `Q:\backend` 与 `Q:\.m2` 均不存在，因此未运行用户指定 Maven compile 与 `OrderCreateIntegrationTest`。未修改 Redis 或 Maven 配置；验证待可访问 Redis 且具备指定路径的本机环境。

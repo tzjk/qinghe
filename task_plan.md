@@ -1,3 +1,21 @@
+# 订单生命周期状态模型与候选迁移（2026-07-23）
+
+**本轮唯一里程碑：** 只建立订单状态枚举、候选数据库迁移和设计文档，并验证既有普通订单创建。禁止实现支付、取消、库存恢复、管理员订单、Spring Task、优惠券、Redis Stream、WebSocket、营业报表及订单前端页面；禁止真实数据库 SQL。
+
+| 阶段 | 状态 | 交付与判定 |
+|---|---|---|
+| 1. Git 收口和分支 | completed | `chore/git-workflow` 已推送；`main` 与 `origin/main` 同步；`develop` 已推送；当前分支为 `feature/order-lifecycle-schema`。 |
+| 2. 状态模型 | completed | 已新建统一 `OrderStatus`，订单创建和订单创建断言均使用 `PENDING_PAY` 枚举常量；未新增状态变更接口。 |
+| 3. 候选迁移和设计文档 | completed | 已生成仅供 DataGrip 人工审核的增量脚本，并记录字段/索引门禁、合法流转与日志事务方案。 |
+| 4. 原订单创建验证和功能提交 | partial | `Q:\backend` 与 `Q:\.m2` 均不存在，指定 Maven 命令未运行；待具备该路径和 Redis 的本机验证后才可结束验证。功能提交和推送仍待本轮收口。 |
+
+### 门禁
+
+- `PENDING_PAY` 是唯一待支付编码；不得引入 `PENDING_PAYMENT` 或更改既有数据库状态值。
+- `total_amount` 为商品原始总额，`pay_amount` 为最终应付金额；不得新增 `goods_amount`。
+- 用户仍须在 DataGrip 手工执行 `SHOW CREATE TABLE qh_order;` 和 `SHOW INDEX FROM qh_order;`。在结果返回前，不向 `Order` 实体加入候选字段，也不运行依赖新列的测试。
+- 取消订单的后续实现必须使条件状态更新、库存恢复和成功日志处于同一个 `REQUIRED` 事务，直接复用 `qh_operate_log`，并避免通用 AOP 的 `REQUIRES_NEW` 成功日志重复写入。
+
 # 宿舍寝室号唯一性与资产编号前提修复（2026-07-23）
 
 **本轮唯一里程碑：** 修复重复寝室号未返回 HTTP 409 的服务层缺口，保障“楼栋编码+寝室号+床位号”资产套装编号的唯一性前提；仅修改寝室新建/编辑的查重与相关记录，运行专项测试后创建 Git 本地历史快照。不执行 SQL、不修改表结构、不启动或停止服务、不变更学生入住、退宿、资产二维码生成或学籍事务。
