@@ -37,6 +37,9 @@ mybatis-plus:
 qinghe:
   redis-key-prefix: "qh:"
 
+order:
+  payment-timeout-minutes: 15
+
 aliyun:
   oss:
     endpoint: https://oss-cn-beijing.aliyuncs.com

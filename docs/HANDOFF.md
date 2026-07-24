@@ -544,3 +544,10 @@ ORDER BY table_name, constraint_name;
 - `order_lifecycle_schema_increment.sql` 是 DataGrip 人工审核候选，拟新增 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 与 `(status, pay_expire_time)`；不重复 `cancel_reason`、`cancel_time`、`completed_time`，不新增 `goods_amount`。真实库仍需用户手工执行 `SHOW CREATE TABLE qh_order;` 与 `SHOW INDEX FROM qh_order;`。
 - 后续取消订单需以 `REQUIRED` 订单事务同时完成条件状态更新、库存恢复和直接写入 `qh_operate_log`；关键方法不能再触发通用 `REQUIRES_NEW` AOP 成功日志。
 - 本会话确认 `Q:\backend`、`Q:\.m2` 均不存在，故指定 Maven compile 和 `OrderCreateIntegrationTest` 均未执行；未创建映射路径、未改 Maven/Redis 配置。待本机环境可用后，须重跑两条指定命令并要求订单专项为 5 tests / 0 failures / 0 errors。
+
+# 2026-07-24 订单生命周期核心闭环
+
+- 已只读确认真实 `qh_order` 含 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time`、取消/完成字段及 `(status,pay_expire_time)` 索引；候选 SQL 未由应用执行。
+- 已完成用户列表/详情、模拟支付、待支付取消及精确库存恢复；管理员列表/详情、接单、开始配送、完成订单；以及每分钟超时取消任务。支付、取消和超时取消的状态竞争均以数据库条件更新收敛。
+- 已完成用户与管理员订单页面，复用单一 HTTP 实例和既有身份守卫。订单专项为 13/0/0/0（原创建 5、生命周期 8），后端 package 与前端 build 均成功；测试前缀数据残留为 0。
+- 未实现优惠券、Redis Stream、WebSocket、缓存、营业报表、真实支付、骑手或配送轨迹。多实例超时任务锁保留为后续增强，不能替代现有数据库条件更新。

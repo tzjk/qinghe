@@ -252,3 +252,20 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 - `GET /api/user/me` 仅从当前 Bearer Token 对应的 `UserContext` 取得用户身份，再由用户服务查询该用户的 `qh_user` 与 `qh_student_profile.current_flag=1` 当前资料。响应新增安全展示字段 `realName`、`studentNo`、`hasStudentProfile`；不返回 `currentFlag`、`activeFlag`、`passwordHash`、二维码令牌、Token 或学生资料内部 ID。
 - 字段语义固定为：`phone` 是登录手机号（响应中仅返回 `phoneMasked`）；`nickname` 是账号昵称；`realName` 是学生实名资料；`studentNo` 是学号。`username` 如存在仅是账号字段，不能作为真实姓名或显示名回退。
 - `PUT /api/user/profile` 继续只允许更新账号昵称与头像，不接受或更新 `realName`、`studentNo` 等受保护学籍字段；实名资料不回写 `qh_user.nickname`。学生资料变更后刷新页面会重新查询当前资料并显示最新实名。
+
+## 2026-07-24 订单生命周期核心接口
+
+| 方法 | 路径 | 身份 | 说明 |
+|---|---|---|---|
+| GET | `/api/orders` | 当前用户 | 支持 `page`、`size`、`status`；仅返回本人安全订单摘要、状态编码/中文名与批量明细。 |
+| GET | `/api/orders/{orderId}` | 当前用户 | 仅返回本人订单；地址使用订单快照。 |
+| POST | `/api/orders/{orderId}/simulate-pay` | 当前用户 | 模拟支付；仅限未超时的 `PENDING_PAY`，服务端使用订单 `payAmount`。 |
+| DELETE | `/api/orders/{orderId}` | 当前用户 | 仅取消 `PENDING_PAY`；条件更新成功后事务内按订单明细恢复库存，不恢复购物车。 |
+| GET | `/api/admin/orders` | 管理员 | 支持订单号关键词、状态、分页；用户手机号脱敏。 |
+| GET | `/api/admin/orders/{orderId}` | 管理员 | 返回订单快照、明细和必要配送地址。 |
+| POST | `/api/admin/orders/{orderId}/accept` | 管理员 | 仅 `PAID -> ACCEPTED`。 |
+| POST | `/api/admin/orders/{orderId}/deliver` | 管理员 | 仅 `ACCEPTED -> DELIVERING`。 |
+| POST | `/api/admin/orders/{orderId}/complete` | 管理员 | 仅 `DELIVERING -> COMPLETED`。 |
+
+- 新订单由服务端写入 `createTime` 与默认 15 分钟 `payExpireTime`；客户端不能提交用户、状态、金额或时间字段。
+- 支付、用户取消和超时取消均使用 `id + status`（用户操作另含 `user_id`）条件更新，因此支付与取消并发时只有一个操作成功。超时任务每分钟扫描一批 `PENDING_PAY AND pay_expire_time <= now` 订单；多实例任务锁是后续增强，数据库条件更新仍为最终正确性保障。

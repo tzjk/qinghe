@@ -337,3 +337,10 @@ M3A 前端已接入上述地址与购物车接口：地址请求仅使用 receiv
 - `GET /api/user/me` 返回安全 `UserDTO`，其中 `realName`、`studentNo`、`hasStudentProfile` 来自当前登录用户唯一的 `current_flag=1` 学生资料；接口每次读取时组合当前资料，不能仅信任旧 Redis 会话，确保管理员改名后用户刷新可见最新结果。
 - `phoneMasked` 表示登录手机号的脱敏展示；`nickname` 表示账号昵称；`realName` 表示实名学籍资料；`studentNo` 表示学号。可空 `username` 不是实名资料，不能参与页面显示名回退。
 - `UserDTO` 不公开学生资料内部 ID、`currentFlag`、`activeFlag`、`passwordHash`、二维码令牌或 Token。`PUT /api/user/profile` 仍只接受昵称和头像，普通学生不得通过个人中心修改实名或其他受保护学籍字段。
+
+## 订单生命周期契约（2026-07-24）
+
+- 用户订单读取严格以 `UserContext` 作为归属条件；列表分页状态筛选和详情都不接收 `userId`，详情包含批量装配的订单明细、状态编码和中文名称。
+- 模拟支付为 `POST /api/orders/{orderId}/simulate-pay`：不接收支付金额，仅使用持久化 `pay_amount`；仅在 `PENDING_PAY` 且当前时间不晚于 `pay_expire_time` 时以条件更新写入 `PAID/pay_time`。
+- 用户取消为 `DELETE /api/orders/{orderId}`：仅 `PENDING_PAY`，条件更新写入 `CANCELLED/cancel_time/USER_CANCEL` 成功后才在同一事务恢复每项明细库存；不删除订单或明细，也不恢复购物车。
+- 管理员端仅接受固定动作端点，不接受客户端目标状态或 `adminId`：`PAID -> ACCEPTED`、`ACCEPTED -> DELIVERING`、`DELIVERING -> COMPLETED`，分别写接单、配送和完成时间。

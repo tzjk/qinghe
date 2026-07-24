@@ -53,3 +53,10 @@ SHOW INDEX FROM qh_order;
 - 后续取消订单必须将“条件更新状态、恢复商品库存、写取消成功日志”置于同一个订单业务 `REQUIRED` 事务。
 - 通用 AOP 操作日志当前使用 `REQUIRES_NEW`。关键订单事务应直接写现有 `qh_operate_log`，并禁止同一关键方法再触发 AOP 成功日志，避免重复记录或主事务回滚后仍留下成功日志。
 - 不新增 `order_log` 或任何其他模块日志表。
+
+## 核心闭环实现（2026-07-24）
+
+- 新订单状态为 `PENDING_PAY`，服务端写入 `create_time` 和默认 15 分钟 `pay_expire_time`。支付成功仅能由 `PENDING_PAY` 条件更新为 `PAID` 并写 `pay_time`。
+- 用户取消和超时取消均为 `PENDING_PAY -> CANCELLED`。只有状态条件更新受影响行数为 1 的事务才能按 `qh_order_item` 恢复对应商品库存并直接写入一条现有 `qh_operate_log` 成功记录；重复取消或多次扫描不会重复恢复。
+- 管理员固定流转为 `PAID -> ACCEPTED -> DELIVERING -> COMPLETED`，每一步以预期状态条件更新并写对应时间与一条操作日志。普通用户令牌不能进入 `/api/admin/**`。
+- Spring Task 每分钟调用可直接测试的批处理服务，按 100 条一批扫描超时待支付订单；未引入普通 JVM 锁或额外大型分布式锁依赖。

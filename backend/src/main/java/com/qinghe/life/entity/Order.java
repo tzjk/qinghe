@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -31,6 +32,13 @@ public class Order extends BaseEntity {
     private BigDecimal discountAmount;
     private BigDecimal deliveryFee;
     private BigDecimal payAmount;
+    private LocalDateTime payTime;
+    private LocalDateTime acceptedTime;
+    private LocalDateTime deliveryTime;
+    private LocalDateTime payExpireTime;
+    private LocalDateTime cancelTime;
+    private String cancelReason;
+    private LocalDateTime completedTime;
     private String status;
     private String remark;
 }

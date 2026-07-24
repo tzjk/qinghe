@@ -541,3 +541,12 @@
 - 已创建 `OrderStatus` 并以其 `PENDING_PAY` 编码替换普通订单创建和订单创建专项测试中的待支付魔法字符串；状态机只定义，不新增支付、取消、管理员、定时或前端功能。
 - 已创建候选人工迁移 `backend/src/main/resources/sql/order_lifecycle_schema_increment.sql`，并更新订单状态机、API、接口契约、数据库和订单设计文档。候选脚本未执行，`Order` 实体未添加新列。
 - 已确认 `Q:\backend` 与 `Q:\.m2` 均不存在，因此未运行用户指定 Maven compile 与 `OrderCreateIntegrationTest`。未修改 Redis 或 Maven 配置；验证待可访问 Redis 且具备指定路径的本机环境。
+
+## 2026-07-24 订单生命周期核心闭环
+
+- 真实库只读门禁通过；Q: 映射仅用于 Maven 短路径，未执行任何迁移 SQL。
+- 后端新增支付期限、用户订单读取、模拟支付、用户取消与精确库存回补、管理员固定流转、超时取消批处理/定时触发；订单创建原有金额、快照、条件扣库存和精确清车逻辑保持不变。
+- `mvn -Dmaven.repo.local=Q:\.m2 -Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest test`：13 tests、0 failures、0 errors、0 skipped（创建 5、生命周期 8）。
+- `mvn -Dmaven.repo.local=Q:\.m2 -DskipTests package`：成功，生成 `backend/target/qinghe-life-backend-1.0.0.jar`。
+- `D:/develop/NodeJS/npm.cmd run build`：成功，1736 modules；仅既有第三方 PURE 注释与大 chunk 警告。
+- 测试前缀用户、店铺、商品、订单、明细、购物车、地址残留计数均为 0。
