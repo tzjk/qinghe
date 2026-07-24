@@ -108,7 +108,7 @@
 | DELETE | `/api/cart/{id}` | 是 | 无 | 仅删除当前用户的指定购物车项。 |
 | DELETE | `/api/cart` | 是 | 无 | 仅清空当前用户购物车。 |
 
-商铺详情采用 Cache Aside：正常缓存使用 `qh:shop:detail:{shopId}` 并增加随机过期时间；不存在商铺使用 `qh:shop:null:{shopId}` 短期空值缓存；重建互斥锁使用 `qh:lock:shop:{shopId}`，限定三次重试。Redis 异常时降级查询 MySQL，不执行 Redis 清库操作。
+商铺详情、商品详情和指定店铺上架商品列表均采用 Cache Aside：`qh:cache:shop:{shopId}`、`qh:cache:goods:{goodsId}`、`qh:cache:shop-goods:{shopId}`。空值使用同 Key 的明确短 TTL 标记；热点重建锁为 `qh:lock:cache:shop:{shopId}`、`qh:lock:cache:goods:{goodsId}`、`qh:lock:cache:shop-goods:{shopId}`，均有限等待和三次重试。Redis 读取、序列化或锁异常会降级查询 MySQL，坏 JSON 会先删除；不执行 Redis 清库操作。
 
 错误示例：验证码不存在、过期或错误返回业务 `code=400` 和清晰 `message`；缺少、错误或过期 Bearer Token 返回 HTTP 401。接口不返回数据库密码、Redis 密码或内部连接信息。
 
@@ -298,3 +298,10 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 订单创建 `POST /api/orders` 的请求体为 `cartItemIds`、`addressId`、可选 `userCouponId` 和可选 `remark`。服务端在同一事务内重新计算原始总额、锁定本人 `AVAILABLE` 用户券、写入优惠额和实付额；支付后核销，待支付主动或超时取消后释放，取消时已过使用截止则转为 `EXPIRED`。
 
 上述普通优惠券接口已由真实表集成测试验证：领取使用条件库存扣减，订单仅接受 `userCouponId`，且金额、状态、归属、时间、店铺和门槛均由服务端复核。`CouponOrderIntegrationTest` 22 项为 0 failures、0 errors。
+
+## 2026-07-24 店铺与商品目录缓存
+
+- 公开接口路径和响应结构不变：`GET /api/shops/{id}`、`GET /api/goods/{id}`、`GET /api/shops/{id}/goods`。
+- 正常 TTL 由 `catalog.cache.shop-ttl-minutes`、`goods-ttl-minutes`、`list-ttl-minutes` 配置，并加 `ttl-jitter-minutes`；空值仅使用 `null-ttl-minutes`。锁等待、租约和最大重试由同一配置组控制。
+- 商品缓存只保存目录静态字段；库存和销量仍逐次从 MySQL 读取，商品实时扣减库存不以 Redis 为事实来源。
+- 管理员店铺/商品写入完成事务提交后，精确删除相关详情与店铺商品列表 Key；商品变更店铺会同时删除新旧店铺列表。缓存删除失败仅记录日志，不回滚数据库更新。

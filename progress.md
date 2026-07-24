@@ -618,3 +618,9 @@
 - 使用用户指定的 Maven 本地仓库执行完整专项测试：`CouponOrderIntegrationTest` 22 项、`CouponSeckillStreamIntegrationTest` 7 项，合计 29 tests、0 failures、0 errors、0 skipped。
 - 后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，生成 `backend/target/qinghe-life-backend-1.0.0.jar`。本轮无前端改动，未执行 npm build。
 - 已更新 API、订单/优惠券/Redis 设计和交接文档，记录普通/秒杀领取分流、Lua 结果码、Redis Key、Stream Group、ACK、Pending 恢复、MySQL 条件库存更新和唯一约束。下一步仅为 Git 差异检查、提交和一次普通 push。
+
+## 2026-07-24 店铺与商品 Redis 热点缓存
+
+- 统一目录缓存组件、Key、TTL、空值、互斥重建、坏值删除、MySQL 降级和事务提交后失效已完成；库存和销量保持实时 MySQL 回源。
+- 首次专项测试为 12/1/0：不存在商品未写空值缓存。修复加载器返回 null 后，同一聚焦命令通过 12/0/0/0。
+- `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，生成后端 JAR；未运行前端或范围外测试。

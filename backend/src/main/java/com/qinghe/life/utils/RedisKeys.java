@@ -14,9 +14,15 @@ public final class RedisKeys {
     public static String code(String phone) { return LOGIN_CODE_KEY + phone; }
     public static String token(String token) { return LOGIN_TOKEN_KEY + token; }
     public static String adminToken(String token) { return ADMIN_TOKEN_KEY + token; }
-    public static String shopDetail(Long shopId) { return "qh:shop:detail:" + shopId; }
-    public static String shopNull(Long shopId) { return "qh:shop:null:" + shopId; }
-    public static String shopLock(Long shopId) { return "qh:lock:shop:" + shopId; }
+    public static String shopDetail(Long shopId) { return "qh:cache:shop:" + shopId; }
+    public static String goodsDetail(Long goodsId) { return "qh:cache:goods:" + goodsId; }
+    public static String shopGoods(Long shopId) { return "qh:cache:shop-goods:" + shopId; }
+    public static String shopCategory(Long shopId) { return "qh:cache:shop-category:" + shopId; }
+    public static String shopLock(Long shopId) { return "qh:lock:cache:shop:" + shopId; }
+    public static String goodsLock(Long goodsId) { return "qh:lock:cache:goods:" + goodsId; }
+    public static String shopGoodsLock(Long shopId) { return "qh:lock:cache:shop-goods:" + shopId; }
+    @Deprecated
+    public static String shopNull(Long shopId) { return shopDetail(shopId); }
     public static String couponSeckillStock(Long couponId) { return "qh:coupon:seckill:stock:" + couponId; }
     public static String couponSeckillUsers(Long couponId) { return "qh:coupon:seckill:users:" + couponId; }
     public static String couponSeckillMeta(Long couponId) { return "qh:coupon:seckill:meta:" + couponId; }

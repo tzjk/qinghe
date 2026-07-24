@@ -523,6 +523,12 @@
 - 当前 Redis 只使用 Spring Data Redis 与 `StringRedisTemplate`；Key 已统一以 `qh:` 开头，已定义登录、管理员会话和商铺详情/空值/互斥 Key。仓库未见 Redisson、Redis Stream、RabbitMQ、Kafka 或其依赖/消费者实现。
 - 商铺详情已有 Cache Aside、空值缓存、随机 TTL、有限互斥重建和 Redis 异常回源。现有 `setIfAbsent` 锁使用固定值并直接删除锁 Key，缺少令牌所有者校验；该实现只能作为后续热点缓存整改对象，不能扩展为普通订单或库存正确性方案。
 
+## 2026-07-24 店铺与商品 Redis 热点缓存：最终发现
+
+- 旧店铺缓存仅覆盖详情，且采用非所有者安全的字符串锁、散落 TTL 和独立空值 Key；已收敛为复用现有 `StringRedisTemplate`、`ObjectMapper`、`RedissonClient` 的轻量 `CatalogCache`。
+- 缓存范围是店铺详情、商品详情和店铺上架商品目录；商品库存/销量逐次回源 MySQL，不以 Redis 实时扣减库存。
+- 事务提交后失效包含商品换店的新旧列表及店铺状态对本店商品详情的影响。测试使用 `CATALOG_CACHE_TEST_` 数据前缀并只删除相应 `qh:cache:*`/`qh:lock:cache:*` Key。
+
 - 迁移决策：普通订单补齐快照、配送费、状态时间和用户券唯一关联；普通券补齐范围、领取/使用窗口与用户券审计字段。因既有 `(user_id,coupon_id)` 唯一约束无法仅靠 ADD 操作放宽，本轮明确第一版每人限领 1 张。
 - 秒杀决策：使用独立 `qh_seckill_coupon_activity` 和 `qh_seckill_coupon_order`，以 `(activity_id,user_id)` 和 `stream_message_id` 唯一约束防重复；活动只能绑定专用券。Redis Lua 负责受理，数据库条件库存更新、唯一约束和事务负责最终正确性。
 - 过程错误：一次文件清单命令误用了 Bash 花括号，在 PowerShell 参数解析阶段失败，未读写项目文件；已改为显式目录参数，未重复该写法。
