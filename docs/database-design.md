@@ -1,5 +1,12 @@
 # 数据库设计（M0）
 
+## 2026-07-23 订单生命周期候选增量（未执行）
+
+- 真实 `qh_order` 尚待用户在 DataGrip 执行 `SHOW CREATE TABLE qh_order;` 和 `SHOW INDEX FROM qh_order;` 后确认。本轮不执行数据库 SQL，也不将静态脚本结论表述为已存在的真实字段。
+- 基线状态列为 `VARCHAR(20)`，待支付编码固定为 `PENDING_PAY`。统一状态完整集合为 `PENDING_PAY`、`PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`、`CANCELLED`；合法流转见 `docs/order-state-machine.md`。
+- `backend/src/main/resources/sql/order_lifecycle_schema_increment.sql` 是 DataGrip 人工审核候选：仅补充 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 和 `(status, pay_expire_time)`。不新增 `goods_amount`，不重复 `cancel_reason`、`cancel_time`、`completed_time`，不删除或重命名字段。
+- 当前金额语义不变：`total_amount` 为商品原始总额，`pay_amount` 为最终应付金额。
+
 ## 2026-07-20 学生所属校区结构门禁（未改表）
 
 - 已对本机 `qinghe_life` 只读确认：`qh_student_profile.campus_id` 为 `bigint NOT NULL` 且已索引。本轮不生成、不执行迁移 SQL，也不以地址、楼栋、寝室或扫码结果替代该学生所属校区字段。

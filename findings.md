@@ -667,3 +667,17 @@
 - 已在两条写入路径增加 `(building_id, room_no)` 的 MyBatis-Plus 主动查重，排除编辑目标自身；冲突使用 `BusinessException(409, ...)`，确保 HTTP 409 与既有专项测试一致。数据库重复键捕获同样改为 409 兜底。
 - 专项测试编译成功，但运行在测试清理阶段因 Redis `192.168.100.128:6379` 连接超时而 2 errors，未触发业务断言；需在可访问 Redis 的本机执行同一专项复核。
 - 本地历史快照为 `dd7149e fix: enforce dorm room number uniqueness`；快照未包含用户已有 `.gitignore` 修改。
+
+## 2026-07-23 订单生命周期状态模型与候选迁移
+
+- 已新增 `OrderStatus`：`PENDING_PAY`、`PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`、`CANCELLED`，提供编码、中文名称、编码解析和合法流转判断。订单创建和专项断言均改用 `OrderStatus.PENDING_PAY.getCode()`；未新增任何状态变更接口。
+- 新候选脚本 `order_lifecycle_schema_increment.sql` 仅提出 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 和 `(status, pay_expire_time)`；静态核对确认既有 `order_core_increment.sql` 已定义 `cancel_reason`、`cancel_time`、`completed_time`，新脚本不重复添加。脚本要求先用 DataGrip 运行 `SHOW CREATE TABLE qh_order;` 与 `SHOW INDEX FROM qh_order;`，本轮没有执行 SQL。
+- 当前会话 `Q:\backend`、`Q:\.m2` 均不存在，用户指定的 compile 与 `OrderCreateIntegrationTest` 命令无法开始。未创建路径映射、未调整 Maven/Redis 配置，也未用其他命令冒充指定验证结果。
+- 后续取消订单的设计固定为“条件状态更新、库存恢复、成功日志”同处 `REQUIRED` 订单事务，直接写现有 `qh_operate_log`，并避免 `REQUIRES_NEW` 通用 AOP 成功日志重复写入。
+
+## 2026-07-24 订单生命周期实现与验证
+
+- 只读 `information_schema` 已确认候选生命周期列和超时索引都实际存在，因此 `Order` 安全映射时间/取消字段；候选迁移脚本未执行。
+- 取消实现先执行 `id + status`（用户请求另加 `user_id`）条件更新，成功后才恢复每个 `qh_order_item` 对应库存并在同一业务事务直接写一条 `qh_operate_log`；通用 `@OperateLog` 未标注这些关键端点，避免其 `REQUIRES_NEW` 成功日志重复记录。
+- 支付、取消和超时扫描共享同一待支付状态竞争边界；管理员状态机只暴露三个固定操作。订单/明细列表以订单分页、批量店铺/用户读取和自定义批量明细 Mapper 组装，未产生逐订单查询。
+- 首次专项运行暴露测试订单号超列长度及先前失败导致的孤立测试订单；均只修正测试夹具与精确清理锚点。最终专项 13/0/0/0，前缀数据残留为 0；后端打包与前端构建均通过。
