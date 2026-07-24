@@ -6,5 +6,7 @@ public enum CouponClaimStatus {
     OUT_OF_STOCK,
     NOT_STARTED,
     ENDED,
-    DISABLED
+    DISABLED,
+    ACTIVITY_DISABLED,
+    ACTIVITY_NOT_READY
 }

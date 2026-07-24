@@ -13,6 +13,7 @@ public interface CouponService {
     PageResult<CouponVO> pageAvailable(CouponPageQuery query);
     PageResult<UserCouponVO> mine(CouponPageQuery query);
     CouponClaimVO claim(Long couponId);
+    CouponClaimVO claimSeckill(Long couponId);
     BigDecimal lockForOrder(Long userId, Long userCouponId, Long shopId, BigDecimal totalAmount, Long orderId, LocalDateTime now);
     void redeemForOrder(Long orderId, LocalDateTime now);
     void releaseForCancelledOrder(Long orderId, LocalDateTime now);

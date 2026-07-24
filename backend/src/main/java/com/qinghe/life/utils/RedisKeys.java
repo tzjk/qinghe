@@ -17,4 +17,11 @@ public final class RedisKeys {
     public static String shopDetail(Long shopId) { return "qh:shop:detail:" + shopId; }
     public static String shopNull(Long shopId) { return "qh:shop:null:" + shopId; }
     public static String shopLock(Long shopId) { return "qh:lock:shop:" + shopId; }
+    public static String couponSeckillStock(Long couponId) { return "qh:coupon:seckill:stock:" + couponId; }
+    public static String couponSeckillUsers(Long couponId) { return "qh:coupon:seckill:users:" + couponId; }
+    public static String couponSeckillMeta(Long couponId) { return "qh:coupon:seckill:meta:" + couponId; }
+    public static String couponSeckillStream() { return "qh:stream:coupon:claim"; }
+    public static String couponSeckillRetry() { return "qh:coupon:seckill:retry"; }
+    public static String couponSeckillFailure() { return "qh:coupon:seckill:failure"; }
+    public static String couponSeckillRecoveryLock() { return "qh:lock:coupon:seckill:pending-recovery"; }
 }

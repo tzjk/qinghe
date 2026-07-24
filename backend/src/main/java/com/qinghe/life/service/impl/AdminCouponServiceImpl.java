@@ -16,6 +16,7 @@ import com.qinghe.life.mapper.CouponMapper;
 import com.qinghe.life.mapper.ShopMapper;
 import com.qinghe.life.mapper.UserCouponMapper;
 import com.qinghe.life.service.AdminCouponService;
+import com.qinghe.life.service.CouponSeckillService;
 import com.qinghe.life.utils.AdminContext;
 import com.qinghe.life.vo.CouponStatsVO;
 import com.qinghe.life.vo.CouponVO;
@@ -32,9 +33,10 @@ public class AdminCouponServiceImpl implements AdminCouponService {
     private final CouponMapper couponMapper;
     private final UserCouponMapper userCouponMapper;
     private final ShopMapper shopMapper;
+    private final CouponSeckillService couponSeckillService;
 
-    public AdminCouponServiceImpl(CouponMapper couponMapper, UserCouponMapper userCouponMapper, ShopMapper shopMapper) {
-        this.couponMapper = couponMapper; this.userCouponMapper = userCouponMapper; this.shopMapper = shopMapper;
+    public AdminCouponServiceImpl(CouponMapper couponMapper, UserCouponMapper userCouponMapper, ShopMapper shopMapper, CouponSeckillService couponSeckillService) {
+        this.couponMapper = couponMapper; this.userCouponMapper = userCouponMapper; this.shopMapper = shopMapper; this.couponSeckillService = couponSeckillService;
     }
     @Override public PageResult<CouponVO> page(CouponPageQuery query) {
         requireAdmin();
@@ -56,6 +58,7 @@ public class AdminCouponServiceImpl implements AdminCouponService {
     @Override @Transactional(rollbackFor = Exception.class) public void changeStatus(Long couponId, String status) {
         requireAdmin(); if (!CouponStatus.isValid(status)) throw new BusinessException(400, "优惠券状态无效"); requireCoupon(couponId);
         if (couponMapper.update(null, Wrappers.<Coupon>lambdaUpdate().eq(Coupon::getId, couponId).set(Coupon::getStatus, status)) != 1) throw new BusinessException(409, "优惠券状态已变化");
+        if (CouponStatus.DISABLED.name().equals(status)) couponSeckillService.markDisabled(couponId);
     }
     @Override public CouponStatsVO stats(Long couponId) {
         requireAdmin(); requireCoupon(couponId); CouponStatsVO view = new CouponStatsVO(); view.setCouponId(couponId);

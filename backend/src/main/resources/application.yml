@@ -46,6 +46,21 @@ order:
     lock-wait-seconds: 0
     lock-lease-seconds: 55
 
+coupon:
+  seckill:
+    stream-key: qh:stream:coupon:claim
+    consumer-group: coupon-seckill-group
+    consumer-name: ${COUPON_SECKILL_CONSUMER:coupon-seckill-local}
+    consume-enabled: true
+    consume-delay-millis: 500
+    consume-batch-size: 20
+    pending-recovery-enabled: true
+    pending-recovery-cron: "*/15 * * * * ?"
+    pending-min-idle-seconds: 30
+    pending-max-retries: 3
+    pending-lock-wait-seconds: 0
+    pending-lock-lease-seconds: 10
+
 aliyun:
   oss:
     endpoint: https://oss-cn-beijing.aliyuncs.com

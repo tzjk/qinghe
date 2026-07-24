@@ -14,6 +14,7 @@ import com.qinghe.life.exception.BusinessException;
 import com.qinghe.life.mapper.CouponMapper;
 import com.qinghe.life.mapper.UserCouponMapper;
 import com.qinghe.life.service.CouponService;
+import com.qinghe.life.service.CouponSeckillService;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.vo.CouponVO;
 import com.qinghe.life.vo.CouponClaimVO;
@@ -36,10 +37,12 @@ public class CouponServiceImpl implements CouponService {
     private static final BigDecimal ZERO = new BigDecimal("0.00");
     private final CouponMapper couponMapper;
     private final UserCouponMapper userCouponMapper;
+    private final CouponSeckillService couponSeckillService;
 
-    public CouponServiceImpl(CouponMapper couponMapper, UserCouponMapper userCouponMapper) {
+    public CouponServiceImpl(CouponMapper couponMapper, UserCouponMapper userCouponMapper, CouponSeckillService couponSeckillService) {
         this.couponMapper = couponMapper;
         this.userCouponMapper = userCouponMapper;
+        this.couponSeckillService = couponSeckillService;
     }
 
     @Override
@@ -75,6 +78,9 @@ public class CouponServiceImpl implements CouponService {
     public CouponClaimVO claim(Long couponId) {
         Long userId = requireCurrentUserId();
         Coupon coupon = requireCoupon(couponId);
+        if (CouponSeckillService.SECKILL_COUPON_STATUS.equals(coupon.getCouponStatus())) {
+            throw new BusinessException(409, "Seckill coupons require the seckill claim endpoint");
+        }
         UserCoupon existing = userCouponMapper.selectOne(Wrappers.<UserCoupon>lambdaQuery()
                 .eq(UserCoupon::getUserId, userId).eq(UserCoupon::getCouponId, couponId));
         if (existing != null) {
@@ -99,6 +105,11 @@ public class CouponServiceImpl implements CouponService {
             throw new BusinessException(500, "优惠券领取失败");
         }
         return CouponClaimVO.success(userCoupon);
+    }
+
+    @Override
+    public CouponClaimVO claimSeckill(Long couponId) {
+        return couponSeckillService.claim(couponId, requireCurrentUserId());
     }
 
     @Override
