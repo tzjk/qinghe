@@ -23,6 +23,9 @@ public class CouponVO {
     private Long shopId;
     private Integer perUserLimit;
     private String status;
+    private boolean claimed;
+    private Long userCouponId;
+    private String userCouponStatus;
 
     public static CouponVO from(Coupon coupon) {
         CouponVO view = new CouponVO();
@@ -34,5 +37,11 @@ public class CouponVO {
         view.setUseEndTime(coupon.getUseEndTime()); view.setShopId(coupon.getShopId());
         view.setPerUserLimit(coupon.getPerUserLimit()); view.setStatus(coupon.getStatus());
         return view;
+    }
+
+    public void markClaimed(Long userCouponId, String userCouponStatus) {
+        this.claimed = userCouponId != null;
+        this.userCouponId = userCouponId;
+        this.userCouponStatus = userCouponStatus;
     }
 }

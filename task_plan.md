@@ -998,3 +998,12 @@
 
 - Result: `main` is initialized locally, tracks `origin/main` at `https://github.com/tzjk/qinghe.git`, and both sides resolve to `68efe71a531757dc11c6bafa2f4c18d8dcda60c5`.
 - Scope: project files plus project-level `.agents` skills were committed. Maven caches, build output, frontend dependencies, and distribution output remain excluded by `.gitignore`.
+
+# 2026-07-24 Coupon duplicate-claim display and feedback
+
+| Phase | Status | Evidence |
+|---|---|---|
+| 1. Audit and contract | completed | Existing retry behavior, identity boundary, list gap, and UI gap verified. |
+| 2. Backend state and focused tests | completed | Explicit claim result, bulk claimed-state mapping, retry/status/concurrency tests all passed. |
+| 3. Frontend state and feedback | completed | Claimed and in-flight cards disable; success updates the card; stale duplicate result warns and refreshes. |
+| 4. Verification, records, and Git | in_progress | Requested Maven test, package, and frontend build passed; final record and authorized commit/push remain. |

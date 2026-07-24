@@ -7,6 +7,7 @@ import com.qinghe.life.dto.CouponPageQuery;
 import com.qinghe.life.entity.Coupon;
 import com.qinghe.life.entity.UserCoupon;
 import com.qinghe.life.enums.CouponStatus;
+import com.qinghe.life.enums.CouponClaimStatus;
 import com.qinghe.life.enums.CouponType;
 import com.qinghe.life.enums.UserCouponStatus;
 import com.qinghe.life.exception.BusinessException;
@@ -15,6 +16,7 @@ import com.qinghe.life.mapper.UserCouponMapper;
 import com.qinghe.life.service.CouponService;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.vo.CouponVO;
+import com.qinghe.life.vo.CouponClaimVO;
 import com.qinghe.life.vo.UserCouponVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -43,11 +45,16 @@ public class CouponServiceImpl implements CouponService {
     @Override
     public PageResult<CouponVO> pageAvailable(CouponPageQuery query) {
         LocalDateTime now = LocalDateTime.now();
+        Map<Long, UserCoupon> userCouponMap = userCouponMap(UserContext.getUserId());
+        List<Long> claimedCouponIds = new ArrayList<Long>(userCouponMap.keySet());
         Page<Coupon> page = couponMapper.selectPage(new Page<Coupon>(query.getPage(), query.getSize()),
                 Wrappers.<Coupon>lambdaQuery().eq(Coupon::getStatus, CouponStatus.ENABLED.name())
                         .le(Coupon::getReceiveStartTime, now).ge(Coupon::getReceiveEndTime, now)
-                        .gt(Coupon::getAvailableStock, 0).orderByDesc(Coupon::getCreateTime));
-        return new PageResult<CouponVO>(couponViews(page.getRecords()), page.getTotal(), page.getCurrent(), page.getSize());
+                        .and(wrapper -> {
+                            wrapper.gt(Coupon::getAvailableStock, 0);
+                            if (!claimedCouponIds.isEmpty()) wrapper.or().in(Coupon::getId, claimedCouponIds);
+                        }).orderByDesc(Coupon::getCreateTime));
+        return new PageResult<CouponVO>(couponViews(page.getRecords(), userCouponMap), page.getTotal(), page.getCurrent(), page.getSize());
     }
 
     @Override
@@ -65,21 +72,25 @@ public class CouponServiceImpl implements CouponService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public UserCouponVO claim(Long couponId) {
+    public CouponClaimVO claim(Long couponId) {
         Long userId = requireCurrentUserId();
         Coupon coupon = requireCoupon(couponId);
-        LocalDateTime now = LocalDateTime.now();
-        validateClaimable(coupon, now);
         UserCoupon existing = userCouponMapper.selectOne(Wrappers.<UserCoupon>lambdaQuery()
                 .eq(UserCoupon::getUserId, userId).eq(UserCoupon::getCouponId, couponId));
         if (existing != null) {
-            return UserCouponVO.from(existing, coupon);
+            return CouponClaimVO.alreadyClaimed(existing);
+        }
+        LocalDateTime now = LocalDateTime.now();
+        CouponClaimVO unavailable = claimUnavailable(coupon, now);
+        if (unavailable != null) {
+            return unavailable;
         }
         int decreased = couponMapper.update(null, Wrappers.<Coupon>lambdaUpdate().eq(Coupon::getId, couponId)
                 .eq(Coupon::getStatus, CouponStatus.ENABLED.name()).gt(Coupon::getAvailableStock, 0)
                 .setSql("available_stock = available_stock - 1"));
         if (decreased != 1) {
-            throw new BusinessException(409, "优惠券库存不足或状态已变化");
+            CouponClaimVO changed = claimUnavailable(requireCoupon(couponId), LocalDateTime.now());
+            return changed == null ? CouponClaimVO.unavailable(CouponClaimStatus.OUT_OF_STOCK, "优惠券库存不足") : changed;
         }
         UserCoupon userCoupon = new UserCoupon();
         userCoupon.setUserId(userId); userCoupon.setCouponId(couponId); userCoupon.setStatus(UserCouponStatus.AVAILABLE.name());
@@ -87,7 +98,7 @@ public class CouponServiceImpl implements CouponService {
         if (userCouponMapper.insert(userCoupon) != 1) {
             throw new BusinessException(500, "优惠券领取失败");
         }
-        return UserCouponVO.from(userCoupon, coupon);
+        return CouponClaimVO.success(userCoupon);
     }
 
     @Override
@@ -196,9 +207,44 @@ public class CouponServiceImpl implements CouponService {
         return coupon;
     }
 
-    private List<CouponVO> couponViews(List<Coupon> coupons) {
+    private CouponClaimVO claimUnavailable(Coupon coupon, LocalDateTime now) {
+        if (!CouponStatus.ENABLED.name().equals(coupon.getStatus())) {
+            return CouponClaimVO.unavailable(CouponClaimStatus.DISABLED, "优惠券未启用");
+        }
+        if (coupon.getReceiveStartTime() == null || now.isBefore(coupon.getReceiveStartTime())) {
+            return CouponClaimVO.unavailable(CouponClaimStatus.NOT_STARTED, "优惠券活动尚未开始");
+        }
+        if (coupon.getReceiveEndTime() == null || now.isAfter(coupon.getReceiveEndTime())) {
+            return CouponClaimVO.unavailable(CouponClaimStatus.ENDED, "优惠券活动已结束");
+        }
+        if (coupon.getAvailableStock() == null || coupon.getAvailableStock() <= 0) {
+            return CouponClaimVO.unavailable(CouponClaimStatus.OUT_OF_STOCK, "优惠券库存不足");
+        }
+        if (!Integer.valueOf(1).equals(coupon.getPerUserLimit())) {
+            throw new BusinessException(409, "当前数据结构仅支持每人限领一张");
+        }
+        return null;
+    }
+
+    private Map<Long, UserCoupon> userCouponMap(Long userId) {
+        if (userId == null) return Collections.emptyMap();
+        Map<Long, UserCoupon> result = new HashMap<Long, UserCoupon>();
+        for (UserCoupon userCoupon : userCouponMapper.selectList(Wrappers.<UserCoupon>lambdaQuery()
+                .eq(UserCoupon::getUserId, userId))) {
+            result.put(userCoupon.getCouponId(), userCoupon);
+        }
+        return result;
+    }
+
+    private List<CouponVO> couponViews(List<Coupon> coupons, Map<Long, UserCoupon> userCouponMap) {
+        if (coupons.isEmpty()) return Collections.emptyList();
         List<CouponVO> result = new ArrayList<CouponVO>();
-        for (Coupon coupon : coupons) result.add(CouponVO.from(coupon));
+        for (Coupon coupon : coupons) {
+            CouponVO view = CouponVO.from(coupon);
+            UserCoupon userCoupon = userCouponMap.get(coupon.getId());
+            if (userCoupon != null) view.markClaimed(userCoupon.getId(), userCoupon.getStatus());
+            result.add(view);
+        }
         return result;
     }
 

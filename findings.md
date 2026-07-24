@@ -707,3 +707,16 @@
 - 取消实现先执行 `id + status`（用户请求另加 `user_id`）条件更新，成功后才恢复每个 `qh_order_item` 对应库存并在同一业务事务直接写一条 `qh_operate_log`；通用 `@OperateLog` 未标注这些关键端点，避免其 `REQUIRES_NEW` 成功日志重复记录。
 - 支付、取消和超时扫描共享同一待支付状态竞争边界；管理员状态机只暴露三个固定操作。订单/明细列表以订单分页、批量店铺/用户读取和自定义批量明细 Mapper 组装，未产生逐订单查询。
 - 首次专项运行暴露测试订单号超列长度及先前失败导致的孤立测试订单；均只修正测试夹具与精确清理锚点。最终专项 13/0/0/0，前缀数据残留为 0；后端打包与前端构建均通过。
+# 2026-07-24 Coupon duplicate-claim audit
+
+- `CouponServiceImpl.claim` is transactional and obtains identity only from `UserContext`; existing `(user_id,coupon_id)` is returned before decrement/insert, but `UserCouponVO` does not distinguish the first and duplicate claim.
+- `CouponVO` and `pageAvailable` have no per-user claim fields. One bulk `qh_user_coupon` query for coupon IDs in the current page can map state without N+1.
+- `uk_qh_user_coupon(user_id,coupon_id)` is the persistence backstop for one-person-one-coupon. Retain the conditional decrement and transaction behavior under concurrency.
+- `CouponsView.vue` only marks an in-flight request; it does not disable claimed coupons, update the card immediately, or give a specific retry message.
+
+## 2026-07-24 Coupon duplicate-claim final findings
+
+- The duplicate response is a normal 200 business result (`ALREADY_CLAIMED`), never a 500. The front end branches on `claimStatus`, not the Chinese message.
+- The refreshed-list test proves `AVAILABLE`, `LOCKED`, `USED`, and `EXPIRED` user coupons all return `claimed=true` and cannot be claimed again.
+- The concurrent-claim test proves one user-coupon row and one stock decrement remain after two simultaneous calls; the persistence unique key and conditional decrement stay in force.
+- Git push evidence: `git push origin feature/coupon-foundation` failed before remote contact because the configured local proxy at `127.0.0.1` refused the GitHub HTTPS connection. The local commit remains available for a later normal push.

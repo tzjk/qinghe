@@ -3,12 +3,12 @@
 ## 2026-07-24 普通优惠券与订单使用契约
 
 - `qh_coupon.status` 仅使用 `ENABLED/DISABLED`；`qh_user_coupon.status` 仅使用 `AVAILABLE/LOCKED/USED/EXPIRED`。Controller、Service 与前端均复用同名常量/枚举，不传递或拼接魔法状态值。
-- 普通领取由当前 `UserContext` 识别用户，必须在领取窗口、启用状态、可用库存和每人限领条件内。数据库以 `available_stock > 0` 条件更新扣减库存，`(user_id,coupon_id)` 唯一约束是重复提交最终兜底；当前结构下 `per_user_limit` 固定为 1。
+- 普通领取由当前 `UserContext` 识别用户，必须在领取窗口、启用状态、可用库存和每人限领条件内。数据库以 `available_stock > 0` 条件更新扣减库存，`(user_id,coupon_id)` 唯一约束是重复提交最终兜底；当前结构下 `per_user_limit` 固定为 1。领取结果为 `CouponClaimVO`：`CLAIM_SUCCESS` 表示首次成功，`ALREADY_CLAIMED` 返回原用户券 ID 和明确中文提醒，库存不足、未开始、已结束和停用也使用 `claimStatus` 区分。
 - `POST /api/orders` 仅可信任 `cartItemIds/addressId/userCouponId/remark`。优惠金额由服务端用券类型和实时商品原始总额计算，`pay_amount = total_amount - discount_amount + delivery_fee`，不得为负；客户端金额、折扣率、券状态和用户编号一律忽略。
 - 创建订单时券状态条件更新 `AVAILABLE -> LOCKED` 并关联订单；支付成功 `LOCKED -> USED` 写入 `use_time`；待支付主动/超时取消仅处理该订单 `LOCKED` 券，未过期转回 `AVAILABLE`，已过期转为 `EXPIRED`。所有路径与订单条件状态更新、库存恢复同一业务事务。
 - 管理员优惠券写接口从 `AdminContext` 获取身份，不接收 `adminId`；领取开始后不允许修改金额、门槛、库存、时间和适用店铺，已有领取记录只能停用，不能物理删除。写操作继续复用 `qh_operate_log`。
 
-该契约已在真实 `qh_coupon/qh_user_coupon` 映射上验证；没有执行迁移 SQL。`CouponOrderIntegrationTest` 覆盖领取窗口、库存、限领、归属、状态、店铺/门槛、金额重算、锁定/核销/释放、并发与事务回滚，共 20 项通过。
+可领取列表以一次当前用户的用户券查询批量映射 `claimed/userCouponId/userCouponStatus`，不逐券查询；`AVAILABLE/LOCKED/USED/EXPIRED` 都表示已经领取，刷新后保持已领取。该契约已在真实 `qh_coupon/qh_user_coupon` 映射上验证；没有执行迁移 SQL。`CouponOrderIntegrationTest` 覆盖领取窗口、库存、限领、归属、状态、店铺/门槛、金额重算、锁定/核销/释放、并发与事务回滚，共 22 项通过。
 
 该契约已在真实 `qh_coupon/qh_user_coupon` 映射上验证；没有执行迁移 SQL。`CouponOrderIntegrationTest` 覆盖领取窗口、库存、限领、归属、状态、店铺/门槛、金额重算、锁定/核销/释放、并发与事务回滚，共 20 项通过。
 
@@ -142,8 +142,8 @@ M3A 前端已接入上述地址与购物车接口：地址请求仅使用 receiv
 | PUT | `/api/orders/{id}/pay` | 用户 | 无；仅模拟支付 | `OrderVO`。 |
 | PUT | `/api/orders/{id}/complete` | 用户 | 无 | `OrderVO`。 |
 | POST | `/api/orders/{id}/review` | 用户 | `content`、`score`（1 至 5）、可选 `images` | `CommentVO`；写入 `qh_comment`，同一订单仅一条评价。 |
-| GET | `/api/coupons` | 用户 | `page`、`size` | 可领取 `PageResult<CouponVO>`。 |
-| POST | `/api/coupons/{id}/claim` | 用户 | 无 | `UserCouponVO`。 |
+| GET | `/api/coupons` | 用户 | `page`、`size` | `PageResult<CouponVO>`，含 `claimed/userCouponId/userCouponStatus`。 |
+| POST | `/api/coupons/{id}/claim` | 用户 | 无 | `CouponClaimVO`，用 `claimStatus` 区分首次、已领取、库存不足、未开始和已结束。 |
 | GET | `/api/coupons/mine` | 用户 | `page`、`size`、可选 `status` | `PageResult<UserCouponVO>`。 |
 
 订单创建必须校验初始 `PENDING_PAY` 状态、商品上架与库存、地址归属、优惠券归属/有效期/门槛。支付不调用第三方服务。校园地址上线后，订单还必须在创建时写入不可变的完整配送快照，不能在订单详情中实时拼接可被用户修改的地址。

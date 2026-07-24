@@ -276,8 +276,8 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 
 | 方法 | 路径 | 身份 | 请求/响应要点 |
 |---|---|---|---|
-| GET | `/api/coupons` | 用户 | 查询当前可领取且有库存的普通优惠券，支持 `page/size`。 |
-| POST | `/api/coupons/{couponId}/claim` | 用户 | 按领取窗口、启用状态、每人限领和 `available_stock > 0` 条件领取；重复请求不会创建第二张券。 |
+| GET | `/api/coupons` | 用户 | 查询当前活动普通券，支持 `page/size`；`CouponVO` 返回 `claimed`、`userCouponId`、`userCouponStatus`，本人已领取券即使已领空仍显示为已领取。 |
+| POST | `/api/coupons/{couponId}/claim` | 用户 | 按领取窗口、启用状态、每人限领和 `available_stock > 0` 条件领取；返回 `CouponClaimVO` 的 `claimStatus`。首次为 `CLAIM_SUCCESS`，重复为 `ALREADY_CLAIMED`（携带原 `userCouponId` 和“该优惠券已领取，请勿重复领取”），库存/活动状态使用明确状态码字段而非解析中文文案。 |
 | GET | `/api/coupons/mine` | 用户 | 查询本人券，支持 `page/size/status`；状态仅为 `AVAILABLE/LOCKED/USED/EXPIRED`。 |
 | GET | `/api/admin/coupons` | 管理员 | 普通优惠券分页查询，支持 `page/size/status`。 |
 | POST | `/api/admin/coupons` | 管理员 | 新增券规则；不接收 `adminId`，适用店铺、时间、库存和金额均由服务端校验。 |
@@ -287,4 +287,4 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 
 订单创建 `POST /api/orders` 的请求体为 `cartItemIds`、`addressId`、可选 `userCouponId` 和可选 `remark`。服务端在同一事务内重新计算原始总额、锁定本人 `AVAILABLE` 用户券、写入优惠额和实付额；支付后核销，待支付主动或超时取消后释放，取消时已过使用截止则转为 `EXPIRED`。
 
-上述普通优惠券接口已由真实表集成测试验证：领取使用条件库存扣减，订单仅接受 `userCouponId`，且金额、状态、归属、时间、店铺和门槛均由服务端复核。`CouponOrderIntegrationTest` 20 项及三个既有订单专项合计 40 项均为 0 failures、0 errors。
+上述普通优惠券接口已由真实表集成测试验证：领取使用条件库存扣减，订单仅接受 `userCouponId`，且金额、状态、归属、时间、店铺和门槛均由服务端复核。`CouponOrderIntegrationTest` 22 项为 0 failures、0 errors。

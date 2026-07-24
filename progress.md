@@ -580,3 +580,16 @@
 - 优惠券业务复核：普通领取使用 MySQL 事务和 `available_stock > 0` 条件扣减；用户券状态固定为 `AVAILABLE -> LOCKED -> USED`，主动/超时取消按过期状态回到 `AVAILABLE` 或转为 `EXPIRED`。订单仅接收 `userCouponId`，服务端计算 `discountAmount/payAmount`，且释放与库存恢复同一事务。
 - `mvn "-Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest,OrderTimeoutCancelIntegrationTest,CouponOrderIntegrationTest" test` 实际为 40 tests、0 failures、0 errors、0 skipped；其中 `CouponOrderIntegrationTest` 为 20 项。随后 `mvn -DskipTests package` 成功，生成 `Q:\backend\target\qinghe-life-backend-1.0.0.jar`。
 - 首次前端 build 定位到 `AdminCouponView.vue` 的 `el-table-column` 缺失结束标签；只修复该模板标签后，真实 frontend 路径 build 成功（1741 modules）。`COUPON_ORDER_TEST_` 精确只读残留检查的 10 个表/范围均为 0。
+# 2026-07-24 Coupon duplicate-claim display and feedback
+
+- Restored project instructions, planning records, and coupon implementation context.
+- Audit complete: repeated claims are service-idempotent but have no explicit API state; available-list and client state do not display a claim.
+- Started from a clean worktree on `feature/coupon-foundation`; no branch was created, no SQL was executed, and no service was controlled.
+
+## 2026-07-24 Coupon duplicate-claim completion evidence
+
+- Backend: `CouponClaimVO.claimStatus` now distinguishes first success, already claimed, out of stock, not started, ended, and disabled. Existing claims are checked before availability validation and return their original `userCouponId` without decrementing stock or inserting a row.
+- List: one current-user `qh_user_coupon` read maps `claimed/userCouponId/userCouponStatus`; all four user-coupon states remain claimed across a refreshed list.
+- Frontend: claimed/in-flight cards are disabled; first success updates the card and displayed remaining stock immediately; a stale `ALREADY_CLAIMED` response shows the exact message and reloads the list.
+- Verification: requested `CouponOrderIntegrationTest` passed 22/0/0/0; requested Maven `-DskipTests package` and frontend production build both passed. No non-coupon tests or SQL were run.
+- Git: committed `1066b83 fix(coupon): prevent duplicate claims with clear user feedback`. The normal non-force push to `origin/feature/coupon-foundation` was attempted once and failed because GitHub port 443 could not connect through `127.0.0.1`; no retry, force-push, merge, or remote rewrite was performed.

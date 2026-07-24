@@ -3,6 +3,7 @@ package com.qinghe.life;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qinghe.life.dto.OrderCreateDTO;
+import com.qinghe.life.dto.CouponPageQuery;
 import com.qinghe.life.entity.Building;
 import com.qinghe.life.entity.Campus;
 import com.qinghe.life.entity.Cart;
@@ -16,6 +17,7 @@ import com.qinghe.life.entity.User;
 import com.qinghe.life.entity.UserAddress;
 import com.qinghe.life.entity.UserCoupon;
 import com.qinghe.life.enums.CouponStatus;
+import com.qinghe.life.enums.CouponClaimStatus;
 import com.qinghe.life.enums.OrderStatus;
 import com.qinghe.life.enums.UserCouponStatus;
 import com.qinghe.life.exception.BusinessException;
@@ -33,9 +35,12 @@ import com.qinghe.life.mapper.UserCouponMapper;
 import com.qinghe.life.mapper.UserMapper;
 import com.qinghe.life.service.CouponService;
 import com.qinghe.life.service.OrderService;
+import com.qinghe.life.common.PageResult;
 import com.qinghe.life.service.impl.OrderCancellationService;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.vo.OrderCreateVO;
+import com.qinghe.life.vo.CouponClaimVO;
+import com.qinghe.life.vo.CouponVO;
 import com.qinghe.life.vo.UserDTO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -118,7 +123,10 @@ class CouponOrderIntegrationTest {
     @Test
     void claimsCouponNormally() {
         Coupon coupon = coupon("CLAIM", LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusMinutes(1), 1);
-        assertNotNull(couponService.claim(coupon.getId()).getId());
+        CouponClaimVO result = couponService.claim(coupon.getId());
+        assertEquals(CouponClaimStatus.CLAIM_SUCCESS.name(), result.getClaimStatus());
+        assertTrue(!result.isClaimed());
+        assertNotNull(result.getUserCouponId());
         assertEquals(0, couponMapper.selectById(coupon.getId()).getAvailableStock().intValue());
         assertEquals(UserCouponStatus.AVAILABLE.name(), userCoupon(coupon, owner).getStatus());
     }
@@ -126,27 +134,31 @@ class CouponOrderIntegrationTest {
     @Test
     void rejectsCouponBeforeReceiveWindow() {
         Coupon coupon = coupon("NOT_STARTED", LocalDateTime.now().plusMinutes(1), LocalDateTime.now().plusMinutes(2), 1);
-        assertThrows(BusinessException.class, () -> couponService.claim(coupon.getId()));
+        assertEquals(CouponClaimStatus.NOT_STARTED.name(), couponService.claim(coupon.getId()).getClaimStatus());
     }
 
     @Test
     void rejectsCouponAfterReceiveWindow() {
         Coupon coupon = coupon("ENDED", LocalDateTime.now().minusMinutes(2), LocalDateTime.now().minusMinutes(1), 1);
-        assertThrows(BusinessException.class, () -> couponService.claim(coupon.getId()));
+        assertEquals(CouponClaimStatus.ENDED.name(), couponService.claim(coupon.getId()).getClaimStatus());
     }
 
     @Test
     void rejectsClaimWhenStockIsExhausted() {
         Coupon coupon = coupon("SOLD_OUT", LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusMinutes(1), 0);
-        assertThrows(BusinessException.class, () -> couponService.claim(coupon.getId()));
+        assertEquals(CouponClaimStatus.OUT_OF_STOCK.name(), couponService.claim(coupon.getId()).getClaimStatus());
     }
 
     @Test
     void enforcesPerUserLimitAndReturnsExistingClaimOnRetry() {
         Coupon coupon = coupon("LIMIT", LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusMinutes(1), 2);
-        Long first = couponService.claim(coupon.getId()).getId();
-        Long second = couponService.claim(coupon.getId()).getId();
-        assertEquals(first, second);
+        CouponClaimVO first = couponService.claim(coupon.getId());
+        CouponClaimVO second = couponService.claim(coupon.getId());
+        assertEquals(CouponClaimStatus.CLAIM_SUCCESS.name(), first.getClaimStatus());
+        assertEquals(CouponClaimStatus.ALREADY_CLAIMED.name(), second.getClaimStatus());
+        assertTrue(second.isClaimed());
+        assertEquals(first.getUserCouponId(), second.getUserCouponId());
+        assertEquals("该优惠券已领取，请勿重复领取", second.getMessage());
         assertEquals(1L, userCouponMapper.selectCount(Wrappers.<UserCoupon>lambdaQuery().eq(UserCoupon::getUserId, owner.getId()).eq(UserCoupon::getCouponId, coupon.getId())).longValue());
         assertEquals(1, couponMapper.selectById(coupon.getId()).getAvailableStock().intValue());
     }
@@ -155,8 +167,53 @@ class CouponOrderIntegrationTest {
     void duplicateClaimDoesNotCreateSecondRecord() {
         Coupon coupon = coupon("DUPLICATE", LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusMinutes(1), 2);
         couponService.claim(coupon.getId());
-        couponService.claim(coupon.getId());
+        CouponClaimVO retry = couponService.claim(coupon.getId());
+        assertEquals(CouponClaimStatus.ALREADY_CLAIMED.name(), retry.getClaimStatus());
         assertEquals(1L, userCouponMapper.selectCount(Wrappers.<UserCoupon>lambdaQuery().eq(UserCoupon::getCouponId, coupon.getId()).eq(UserCoupon::getUserId, owner.getId())).longValue());
+        assertEquals(1, couponMapper.selectById(coupon.getId()).getAvailableStock().intValue());
+    }
+
+    @Test
+    void claimedCouponStatusesAreListedAndCannotBeClaimedAgainAfterRefresh() {
+        List<UserCouponStatus> statuses = Arrays.asList(UserCouponStatus.AVAILABLE, UserCouponStatus.LOCKED,
+                UserCouponStatus.USED, UserCouponStatus.EXPIRED);
+        List<Coupon> coupons = new ArrayList<Coupon>();
+        for (UserCouponStatus status : statuses) {
+            Coupon coupon = coupon("LIST_" + status.name(), LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusMinutes(1), 1);
+            UserCoupon userCoupon = availableCoupon(coupon, owner, LocalDateTime.now().plusMinutes(5));
+            userCoupon.setStatus(status.name()); userCouponMapper.updateById(userCoupon);
+            coupon.setAvailableStock(0); couponMapper.updateById(coupon);
+            coupons.add(coupon);
+        }
+        CouponPageQuery query = new CouponPageQuery(); query.setSize(50);
+        PageResult<CouponVO> initialPage = couponService.pageAvailable(query);
+        PageResult<CouponVO> refreshedPage = couponService.pageAvailable(query);
+        for (int index = 0; index < coupons.size(); index++) {
+            CouponVO initial = couponView(initialPage, coupons.get(index).getId());
+            CouponVO refreshed = couponView(refreshedPage, coupons.get(index).getId());
+            assertNotNull(initial); assertNotNull(refreshed);
+            assertTrue(initial.isClaimed()); assertTrue(refreshed.isClaimed());
+            assertEquals(statuses.get(index).name(), refreshed.getUserCouponStatus());
+            assertEquals(CouponClaimStatus.ALREADY_CLAIMED.name(), couponService.claim(coupons.get(index).getId()).getClaimStatus());
+        }
+    }
+
+    @Test
+    void concurrentDuplicateClaimsCreateOneUserCouponAndDecrementStockOnce() throws Exception {
+        Coupon coupon = coupon("CONCURRENT_CLAIM", LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusMinutes(1), 1);
+        CountDownLatch ready = new CountDownLatch(2); CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Future<CouponClaimVO>> futures = new ArrayList<Future<CouponClaimVO>>();
+        for (int index = 0; index < 2; index++) {
+            futures.add(pool.submit(() -> { asUser(owner); ready.countDown(); start.await(5, TimeUnit.SECONDS); try { return couponService.claim(coupon.getId()); } finally { UserContext.clear(); } }));
+        }
+        assertTrue(ready.await(5, TimeUnit.SECONDS)); start.countDown();
+        int successes = 0;
+        for (Future<CouponClaimVO> future : futures) if (CouponClaimStatus.CLAIM_SUCCESS.name().equals(future.get(10, TimeUnit.SECONDS).getClaimStatus())) successes++;
+        pool.shutdownNow();
+        assertEquals(1, successes);
+        assertEquals(1L, userCouponMapper.selectCount(Wrappers.<UserCoupon>lambdaQuery().eq(UserCoupon::getUserId, owner.getId()).eq(UserCoupon::getCouponId, coupon.getId())).longValue());
+        assertEquals(0, couponMapper.selectById(coupon.getId()).getAvailableStock().intValue());
     }
 
     @Test
@@ -309,6 +366,11 @@ class CouponOrderIntegrationTest {
         assertThrows(RuntimeException.class, () -> orderService.create(request(cart, address, userCoupon.getId(), "ROLLBACK")));
         assertEquals(UserCouponStatus.AVAILABLE.name(), userCouponMapper.selectById(userCoupon.getId()).getStatus());
         assertEquals(0L, orderMapper.selectCount(Wrappers.<Order>lambdaQuery().likeRight(Order::getRemark, MARKER + "ROLLBACK")).longValue());
+    }
+
+    private CouponVO couponView(PageResult<CouponVO> page, Long couponId) {
+        for (CouponVO coupon : page.getRecords()) if (couponId.equals(coupon.getId())) return coupon;
+        return null;
     }
 
     private Coupon coupon(String suffix, LocalDateTime receiveStart, LocalDateTime receiveEnd, int stock) {
