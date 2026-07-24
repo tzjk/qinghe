@@ -13,7 +13,9 @@ public class UserCoupon extends BaseEntity {
     private Long userId;
     private Long couponId;
     private Long orderId;
-    private String couponStatus;
-    private LocalDateTime claimTime;
+    private String status;
+    private LocalDateTime receiveTime;
+    private LocalDateTime lockTime;
     private LocalDateTime useTime;
+    private LocalDateTime expireTime;
 }

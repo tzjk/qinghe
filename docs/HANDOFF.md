@@ -558,3 +558,16 @@ ORDER BY table_name, constraint_name;
 - 支付条件更新也要求 `pay_expire_time >= now`；超时取消条件同时限制 `id`、`PENDING_PAY` 和截止时间。数据库条件更新是支付/取消并发与重复扫描的最终幂等保障。
 - `OrderPaymentTimeoutTask` 仅以 Redisson 的 `qh:lock:order:timeout-cancel` 获取有限等待和租约锁并触发扫描。Redisson 复用 `spring.redis`，未获锁、Redis 异常或锁异常均结束本轮，且仅当前线程持锁才解锁。
 - 本轮指定订单测试为 20/0/0/0（新增 `OrderTimeoutCancelIntegrationTest` 7 项，含真实 Redis 锁未获得与释放后重试）；`mvn -Dmaven.repo.local=Q:/.m2 -DskipTests package` 成功生成后端 JAR。未执行 SQL、未改 Redis 地址/密码，未进入优惠券、WebSocket、缓存或报表任务。
+# 2026-07-24 普通优惠券基础业务：实现完成，验证受环境和候选迁移阻断
+
+- 已新增普通券领域模型、管理员/用户端 API、领取条件更新、订单锁定/支付核销/取消释放、用户与管理员页面，以及候选人工迁移 `backend/src/main/resources/sql/coupon_foundation_increment.sql`。不含任何秒杀、Lua、Redis Stream、WebSocket、商品缓存或报表代码。
+- 真实 `qh_coupon/qh_user_coupon` 仍是旧结构，缺少本轮字段；候选 SQL 未执行。手工审核并执行后，先重跑本轮指定四类 Maven 专项测试，再进行跳过测试打包和前端构建。
+- 本轮指定 Maven 命令已仅执行一次，因 `Q:\.m2` Access is denied 在 Maven 启动阶段失败，未到编译/Surefire；后端打包按“专项通过后”规则未运行。前端 `npm run build` 已执行一次，受 esbuild 读取工作区上级目录限制而无法加载 `vite.config.js`，未生成构建结论。
+- 后续收口结果见下节；本段“迁移/环境阻断”是此前快照，不能作为当前状态。
+
+## 2026-07-24 普通优惠券基础模块：验证与收口完成
+
+- 用户已人工完成优惠券真实表结构与索引；`coupon_foundation_increment.sql` 保留为参考，未由 Codex 或应用自动执行。
+- `mvn "-Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest,OrderTimeoutCancelIntegrationTest,CouponOrderIntegrationTest" test` 在 `Q:\backend` 使用默认 Maven 本地仓库通过：40 tests、0 failures、0 errors、0 skipped（优惠券专项 20 项）。
+- `mvn -DskipTests package` 成功并生成 `Q:\backend\target\qinghe-life-backend-1.0.0.jar`；真实 `frontend` 路径 Vite 构建在修复 `AdminCouponView.vue` 缺失的表格列闭合标签后成功（1741 modules）。
+- `COUPON_ORDER_TEST_` 的优惠券、用户券、订单、明细、购物车、地址、商品、店铺、操作日志和用户均经只读计数确认残留为 0。未开始 Lua、Redis Stream、秒杀券、Redis 商品缓存、WebSocket 或营业报表。

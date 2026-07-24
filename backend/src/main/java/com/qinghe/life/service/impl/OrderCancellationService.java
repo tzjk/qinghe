@@ -10,6 +10,7 @@ import com.qinghe.life.mapper.GoodsMapper;
 import com.qinghe.life.mapper.OperateLogMapper;
 import com.qinghe.life.mapper.OrderItemMapper;
 import com.qinghe.life.mapper.OrderMapper;
+import com.qinghe.life.service.CouponService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,13 +27,15 @@ public class OrderCancellationService {
     private final OrderItemMapper orderItemMapper;
     private final GoodsMapper goodsMapper;
     private final OperateLogMapper operateLogMapper;
+    private final CouponService couponService;
 
     public OrderCancellationService(OrderMapper orderMapper, OrderItemMapper orderItemMapper,
-                                    GoodsMapper goodsMapper, OperateLogMapper operateLogMapper) {
+                                    GoodsMapper goodsMapper, OperateLogMapper operateLogMapper, CouponService couponService) {
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
         this.goodsMapper = goodsMapper;
         this.operateLogMapper = operateLogMapper;
+        this.couponService = couponService;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -70,6 +73,7 @@ public class OrderCancellationService {
                 throw new BusinessException(409, "商品库存恢复失败，取消已回滚");
             }
         }
+        couponService.releaseForCancelledOrder(orderId, cancelTime);
         Long actualActorId = logActorId;
         if (actualActorId == null) {
             Order cancelled = orderMapper.selectById(orderId);

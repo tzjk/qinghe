@@ -1,5 +1,18 @@
 # 普通订单、优惠券、Redis 缓存与限时秒杀架构审计（2026-07-17）
 
+## 2026-07-24 普通优惠券基础业务实施边界
+
+- 本轮普通券只使用 MySQL 事务和条件更新：领取扣减 `available_stock`，订单锁定用户券，支付核销，待支付取消释放。没有 Lua、Redis Stream、秒杀入口、全局领取锁、WebSocket、Redis 商品缓存或营业报表。
+- `backend/src/main/resources/sql/coupon_foundation_increment.sql` 现作为结构参考保留：用户已人工完成其中对应的真实字段与索引配置，应用和 Codex 均未执行该 SQL，也不得重复执行。
+- 固定金额券使用 `discount_amount`，折扣券使用 `discount_rate`；金额统一 `BigDecimal` 与 `HALF_UP` 两位小数。订单仍只使用 `total_amount`（商品原始总额）和 `pay_amount`（优惠后实付），不新增 `goods_amount`。
+- 当前 `(user_id,coupon_id)` 唯一索引保留，故 `per_user_limit=1`。未来若需一人多张同券，必须另行批准唯一约束变更与完整迁移，不能绕过该约束。
+
+### 2026-07-24 基础模块验证收口
+
+- 普通券领取、订单锁定、支付核销与主动/超时取消释放均已在同一 MySQL 事务边界验证；库存领取与用户券状态转换均以条件更新兜底。
+- `CouponOrderIntegrationTest` 20 项、`OrderCreateIntegrationTest` 5 项、`OrderLifecycleIntegrationTest` 8 项、`OrderTimeoutCancelIntegrationTest` 7 项，共 40 项通过，0 failures、0 errors；唯一前缀 `COUPON_ORDER_TEST_` 的优惠券、用户券、订单、明细、购物车、地址、商品、店铺、日志和用户残留均为 0。
+- 未实现或启动 Lua、Redis Stream、秒杀优惠券、Redis 商品缓存、WebSocket 或营业报表。
+
 ## 2026-07-23 订单生命周期状态模型（当前实施边界）
 
 - 当前仅完成状态枚举和候选迁移设计。`PENDING_PAY` 是现有待支付编码；`PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`、`CANCELLED` 只作为状态机定义，当前没有支付、取消、管理员履约或超时扫描实现。

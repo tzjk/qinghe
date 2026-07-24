@@ -23,6 +23,7 @@ import AdminShopView from '../views/AdminShopView.vue'
 import AdminGoodsView from '../views/AdminGoodsView.vue'
 import AdminGoodsCategoryView from '../views/AdminGoodsCategoryView.vue'
 import AdminOrderView from '../views/AdminOrderView.vue'
+import AdminCouponView from '../views/AdminCouponView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminLoginView from '../views/AdminLoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
@@ -57,7 +58,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
     { path: 'goods', name: 'admin-goods', component: AdminGoodsView, meta: { title: '商品管理', requiresAdmin: true } },
     { path: 'goods/categories', name: 'admin-goods-categories', component: AdminGoodsCategoryView, meta: { title: '商品分类', requiresAdmin: true } },
     { path: 'orders', name: 'admin-orders', component: AdminOrderView, meta: { title: '订单管理', requiresAdmin: true } },
-    { path: 'coupons', component: AdminResourceView, meta: { title: '优惠管理', requiresAdmin: true } },
+    { path: 'coupons', name: 'admin-coupons', component: AdminCouponView, meta: { title: '优惠管理', requiresAdmin: true } },
     { path: 'users', component: AdminResourceView, meta: { title: '用户查询', requiresAdmin: true } },
     { path: 'blogs', component: AdminResourceView, meta: { title: '内容管理', requiresAdmin: true } },
     { path: 'comments', component: AdminResourceView, meta: { title: '评论管理', requiresAdmin: true } },

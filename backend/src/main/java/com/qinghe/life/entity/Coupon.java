@@ -14,10 +14,19 @@ public class Coupon extends BaseEntity {
     private String name;
     private String couponType;
     private BigDecimal discountAmount;
+    private BigDecimal discountRate;
     private BigDecimal thresholdAmount;
     private Integer totalStock;
+    private Integer availableStock;
     private Integer claimedCount;
     private String couponStatus;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+    private LocalDateTime receiveStartTime;
+    private LocalDateTime receiveEndTime;
+    private LocalDateTime useStartTime;
+    private LocalDateTime useEndTime;
+    private Long shopId;
+    private Integer perUserLimit;
+    private String status;
 }
