@@ -1,5 +1,15 @@
 # 后端接口说明（M2）
 
+## 2026-07-24 秒杀优惠券领取
+
+| 方法 | 路径 | 身份 | 说明 |
+|---|---|---|---|
+| POST | `/api/coupons/{couponId}/claim` | 当前用户 | 普通券 MySQL 同步领取；明确拒绝 `coupon_status=SECKILL` 的券。 |
+| POST | `/api/coupons/{couponId}/seckill-claim` | 当前用户 | 仅秒杀券；Lua 原子校验后写入 Redis Stream，返回受理结果，不在 HTTP 线程写 MySQL 用户券。 |
+
+- 秒杀领取响应沿用 `CouponClaimVO.claimStatus`：Lua `0` 为 `CLAIM_SUCCESS`，`1` 为 `ALREADY_CLAIMED`，`2` 为 `OUT_OF_STOCK`，`3` 为 `NOT_STARTED`，`4` 为 `ENDED`，`5` 为 `ACTIVITY_DISABLED`，缺少或不完整预热元数据的 `6` 为 `ACTIVITY_NOT_READY`。
+- 普通领取仍使用 MySQL 事务与 `available_stock > 0` 条件扣减；秒杀异步落库同样使用 `qh_coupon.available_stock > 0` 条件更新和 `qh_user_coupon(user_id,coupon_id)` 唯一约束作为最终兜底。
+
 ## 2026-07-23 订单状态模型与候选迁移
 
 - 当前真实订单接口仍只有 `POST /api/orders`。它只接收 `cartItemIds`、`addressId`、可选 `remark`，服务端写入 `PENDING_PAY`；本轮未新增支付、取消、管理员订单或订单页面接口。

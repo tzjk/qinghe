@@ -720,3 +720,20 @@
 - The refreshed-list test proves `AVAILABLE`, `LOCKED`, `USED`, and `EXPIRED` user coupons all return `claimed=true` and cannot be claimed again.
 - The concurrent-claim test proves one user-coupon row and one stock decrement remain after two simultaneous calls; the persistence unique key and conditional decrement stay in force.
 - Git push evidence: `git push origin feature/coupon-foundation` failed before remote contact because the configured local proxy at `127.0.0.1` refused the GitHub HTTPS connection. The local commit remains available for a later normal push.
+# 2026-07-24 Coupon seckill stream milestone
+
+- Start gate: `feature/coupon-seckill-stream` is current and clean (`git status -sb` and `git branch --show-current` executed once as requested).
+- Scope is limited to coupon entities/mappers/services/controllers, `qh_coupon` and `qh_user_coupon`, Redis/Redisson configuration, Maven/application configuration, the coupon Redis design, and the two coupon-focused integration tests.
+- Existing source inventory includes `backend/src/main/resources/sql/seckill_coupon_increment.sql`; it is a candidate only until schema verification confirms whether a manual index review is necessary. It will not be imported or executed.
+- Live read-only MySQL verification confirmed `qh_user_coupon.uk_qh_user_coupon (user_id, coupon_id)` exists. No unique-index candidate SQL is required. `qh_coupon` has `available_stock`, receiving windows, and `status`, but no dedicated activity column; the existing `coupon_status` field is the smallest non-migration activity marker for this milestone (`SECKILL` only).
+- The legacy `seckill_coupon_increment.sql` proposes separate activity/order tables, which conflicts with this milestone's required final persistence in `qh_coupon` and `qh_user_coupon`; it remains untouched and will not be used.
+- Redis and Redisson dependencies/configuration already exist. Scheduling is enabled and the existing Redisson lock pattern is reserved for scheduled work, not a claim request.
+- Verification blocker: the user-mandated Maven command could not create `Q:\.m2` and exited before compilation with `Access is denied`. Per scope, no alternate repository path, configuration mutation, fake Redis test, SQL execution, commit, or push was attempted.
+
+## 2026-07-24 Seckill consumer-group API compatibility
+
+- The source used `StreamOperations.create(streamKey, ReadOffset.from("0-0"), groupName)`, which does not exist in the Spring Data Redis 2.7.18 API selected by Spring Boot 2.7.18.
+- `StreamOperations.createGroup(streamKey, ReadOffset.from("0-0"), groupName)` is available, but it cannot request Redis `MKSTREAM`; `RedisStreamCommands.xGroupCreate(key, group, ReadOffset.from("0-0"), true)` is the smallest compatible command path for creating an empty stream and its group without adding a synthetic claim message.
+- The follow-up must treat only a Redis `BUSYGROUP` response as idempotent success. Connection, authorization, and all other command failures remain observable exceptions.
+- Main-source verification succeeded: `mvn -DskipTests compile` compiled all 236 main sources after the change. The Maven warning reports unchecked operations in `CouponSeckillServiceImpl` without a source location; no raw type is introduced by the small `RedisCallback<String>` call, so no broad warning-only refactor was made.
+- The requested focused test command was retried after successful main compilation, but `testCompile` failed before either target test ran: all integration tests report their `com.qinghe.life.*` imports as missing while `target/classes` contains and `javap` resolves `com.qinghe.life.entity.Coupon`. A read-only Maven diagnostic also hit `AccessDeniedException` creating a tracking directory under `D:\maven\apache-maven-3.9.11\Repository`. These failures are not caused by, or safely repairable within, the seckill coupon scope.

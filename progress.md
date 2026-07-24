@@ -593,3 +593,28 @@
 - Frontend: claimed/in-flight cards are disabled; first success updates the card and displayed remaining stock immediately; a stale `ALREADY_CLAIMED` response shows the exact message and reloads the list.
 - Verification: requested `CouponOrderIntegrationTest` passed 22/0/0/0; requested Maven `-DskipTests package` and frontend production build both passed. No non-coupon tests or SQL were run.
 - Git: committed `1066b83 fix(coupon): prevent duplicate claims with clear user feedback`. The normal non-force push to `origin/feature/coupon-foundation` was attempted once and failed because GitHub port 443 could not connect through `127.0.0.1`; no retry, force-push, merge, or remote rewrite was performed.
+# 2026-07-24 Coupon seckill stream milestone - started
+
+- Confirmed the requested branch `feature/coupon-seckill-stream` and a clean working tree.
+- Restored the persistent planning workflow and began the limited coupon/Redis design audit; no application code, MySQL, Redis configuration, or SQL data has been changed.
+- Read-only schema verification confirmed the required `(user_id, coupon_id)` unique constraint is present. The implementation will use existing `coupon_status=SECKILL` as the explicit activity marker, avoiding an automatic schema migration.
+- Added the unverified seckill implementation and real-Redis-focused test source. The required targeted Maven test command stopped before compilation because Maven cannot create `Q:\.m2` (`Access is denied`). No package, Git commit, or push was performed.
+
+## 2026-07-24 Seckill consumer-group compatibility follow-up
+
+- Restored the active coupon-seckill milestone and inspected the current uncommitted implementation.
+- Confirmed the compile failure is isolated to `CouponSeckillServiceImpl.ensureGroup()`: Spring Data Redis 2.7.18 has no `StreamOperations.create(...)`; the low-level stream API exposes `xGroupCreate(..., mkStream)` for the required `MKSTREAM` behavior.
+- Next: apply the narrow group-creation compatibility fix, then rerun the exact user-specified focused Maven test.
+
+## 2026-07-24 Seckill consumer-group compatibility verification result
+
+- Implemented the compatible `xGroupCreate(streamKey bytes, consumerGroup, ReadOffset.from("0-0"), true)` call. `true` maps to Redis `MKSTREAM`; no synthetic business message, stream deletion, consumer-group deletion, Redis address/password change, or flush operation was used. `BUSYGROUP` is the only ignored group-creation error.
+- `mvn -DskipTests compile`: success, 236 main sources compiled. The original missing `StreamOperations.create` error is resolved.
+- `mvn "-Dtest=CouponOrderIntegrationTest,CouponSeckillStreamIntegrationTest" test`: attempted twice. Both runs stopped in `testCompile` before test execution because all integration tests could not resolve `com.qinghe.life.*` main packages. Read-only diagnostics confirmed `target/classes` includes `Coupon.class` and `javap` can load it; a further Maven diagnostic encountered an access denial under `D:\maven\apache-maven-3.9.11\Repository`.
+- Per the requested order, package, final Git diff checks, commit, and the one normal push were not performed after the focused test failed.
+
+## 2026-07-24 秒杀优惠券 Redis Stream：测试、打包与待 Git 收口
+
+- 使用用户指定的 Maven 本地仓库执行完整专项测试：`CouponOrderIntegrationTest` 22 项、`CouponSeckillStreamIntegrationTest` 7 项，合计 29 tests、0 failures、0 errors、0 skipped。
+- 后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，生成 `backend/target/qinghe-life-backend-1.0.0.jar`。本轮无前端改动，未执行 npm build。
+- 已更新 API、订单/优惠券/Redis 设计和交接文档，记录普通/秒杀领取分流、Lua 结果码、Redis Key、Stream Group、ACK、Pending 恢复、MySQL 条件库存更新和唯一约束。下一步仅为 Git 差异检查、提交和一次普通 push。

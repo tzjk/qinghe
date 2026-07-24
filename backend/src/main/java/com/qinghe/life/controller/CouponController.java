@@ -27,4 +27,5 @@ public class CouponController {
     @GetMapping("/mine") public Result<PageResult<UserCouponVO>> mine(@Valid CouponPageQuery query) { return Result.success(couponService.mine(query)); }
     @OperateLog(module = "优惠券", action = "领取普通优惠券")
     @PostMapping("/{couponId}/claim") public Result<CouponClaimVO> claim(@PathVariable Long couponId) { return Result.success(couponService.claim(couponId)); }
+    @PostMapping("/{couponId}/seckill-claim") public Result<CouponClaimVO> claimSeckill(@PathVariable Long couponId) { return Result.success(couponService.claimSeckill(couponId)); }
 }

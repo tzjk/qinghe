@@ -560,6 +560,14 @@ ORDER BY table_name, constraint_name;
 - 本轮指定订单测试为 20/0/0/0（新增 `OrderTimeoutCancelIntegrationTest` 7 项，含真实 Redis 锁未获得与释放后重试）；`mvn -Dmaven.repo.local=Q:/.m2 -DskipTests package` 成功生成后端 JAR。未执行 SQL、未改 Redis 地址/密码，未进入优惠券、WebSocket、缓存或报表任务。
 # 2026-07-24 普通优惠券基础业务：实现完成，验证受环境和候选迁移阻断
 
+## 2026-07-24 秒杀优惠券 Redis Stream：验证与交接完成
+
+- 路由边界：`POST /api/coupons/{couponId}/claim` 保持普通券的 MySQL 同步领取，并拒绝 `coupon_status=SECKILL`；`POST /api/coupons/{couponId}/seckill-claim` 为秒杀券唯一入口。
+- Lua 使用 `qh:coupon:seckill:stock:{couponId}`、`qh:coupon:seckill:users:{couponId}`、`qh:coupon:seckill:meta:{couponId}` 和 `qh:stream:coupon:claim` 原子校验活动、时间、重复领取与库存后受理。返回码依次为：0 受理、1 已领、2 库存不足、3 未开始、4 已结束、5 已停用、6 未预热。
+- Consumer Group 使用配置化 Stream/Group，底层 `XGROUP CREATE ... 0-0 MKSTREAM` 安全创建空 Stream；仅忽略 `BUSYGROUP`。消费者在 MySQL 事务成功完成用户券幂等检查、`available_stock > 0` 条件扣减和用户券写入后 ACK。`qh_user_coupon(user_id,coupon_id)` 唯一约束是最终一人一券保护。
+- Pending 恢复以 `XPENDING`/`XCLAIM` 执行；失败消息保留 Pending，达到配置重试上限后记录精简失败原因并 ACK。Redisson 锁只保护跨实例的恢复调度。
+- 已验证：`CouponOrderIntegrationTest` 22 项、`CouponSeckillStreamIntegrationTest` 7 项，合计 29/0/0/0；后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，JAR 已生成。未运行 SQL、前端构建、商品缓存、WebSocket 或营业报表任务。
+
 - 已新增普通券领域模型、管理员/用户端 API、领取条件更新、订单锁定/支付核销/取消释放、用户与管理员页面，以及候选人工迁移 `backend/src/main/resources/sql/coupon_foundation_increment.sql`。不含任何秒杀、Lua、Redis Stream、WebSocket、商品缓存或报表代码。
 - 真实 `qh_coupon/qh_user_coupon` 仍是旧结构，缺少本轮字段；候选 SQL 未执行。手工审核并执行后，先重跑本轮指定四类 Maven 专项测试，再进行跳过测试打包和前端构建。
 - 本轮指定 Maven 命令已仅执行一次，因 `Q:\.m2` Access is denied 在 Maven 启动阶段失败，未到编译/Surefire；后端打包按“专项通过后”规则未运行。前端 `npm run build` 已执行一次，受 esbuild 读取工作区上级目录限制而无法加载 `vite.config.js`，未生成构建结论。

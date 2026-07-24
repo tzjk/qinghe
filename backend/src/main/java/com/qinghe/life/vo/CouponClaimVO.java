@@ -19,6 +19,10 @@ public class CouponClaimVO {
         return result(true, userCoupon == null ? null : userCoupon.getId(), CouponClaimStatus.ALREADY_CLAIMED, "该优惠券已领取，请勿重复领取");
     }
 
+    public static CouponClaimVO seckillAccepted() {
+        return result(false, null, CouponClaimStatus.CLAIM_SUCCESS, "Seckill claim accepted");
+    }
+
     public static CouponClaimVO unavailable(CouponClaimStatus claimStatus, String message) {
         return result(false, null, claimStatus, message);
     }

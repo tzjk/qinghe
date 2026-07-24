@@ -1,5 +1,15 @@
 # 普通订单、优惠券、Redis 缓存与限时秒杀架构审计（2026-07-17）
 
+## 2026-07-24 秒杀优惠券实现与验证收口
+
+- 路由分离：普通券仅由 `POST /api/coupons/{couponId}/claim` 在 MySQL 事务中领取；`coupon_status=SECKILL` 只能走 `POST /api/coupons/{couponId}/seckill-claim`。普通路径拒绝秒杀券，未改普通券领取、锁券、核销或退券规则。
+- Redis Key：`qh:coupon:seckill:stock:{couponId}`、`qh:coupon:seckill:users:{couponId}`、`qh:coupon:seckill:meta:{couponId}`、`qh:stream:coupon:claim`、`qh:coupon:seckill:retry`、`qh:coupon:seckill:failure`，以及 Pending 恢复锁 `qh:lock:coupon:seckill:pending-recovery`。Stream Key、Consumer Group 和 Consumer 名称均可由 `coupon.seckill` 配置覆盖。
+- Lua 以服务端时间原子校验预热元数据、活动状态和时间窗口，检查一人一券集合与 Redis 库存；成功时执行 `DECR`、`SADD`、`XADD`。返回码为：`0` 受理、`1` 已领、`2` Redis 库存不足、`3` 未开始、`4` 已结束、`5` 已停用、`6` 未预热或元数据不完整。
+- Consumer Group 通过 Spring Data Redis 2.7.18 底层 `XGROUP CREATE ... 0-0 MKSTREAM` 创建：Stream 不存在时自动创建且不写入伪造业务消息；仅 `BUSYGROUP` 视为幂等成功，连接、权限和其他错误不被吞掉。
+- 消费者先在同一 MySQL 事务内检查既有用户券，再以 `available_stock > 0` 条件更新扣减库存并插入用户券；数据库唯一约束 `(user_id,coupon_id)` 保留为重复投递和并发的一人一券最终保护。事务成功后才 ACK Stream 消息并清除该消息重试计数。
+- 失败消息保持 Pending；定时恢复使用 `XPENDING`/`XCLAIM`。达到配置的最大重试次数后记录精简失败原因、ACK 该消息，避免无限重复消费；恢复任务的 Redisson 锁只用于跨实例调度互斥，不参与领取请求。
+- 实测：`CouponOrderIntegrationTest` 22 项与 `CouponSeckillStreamIntegrationTest` 7 项，合计 29/0/0/0；`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功生成后端 JAR。未执行 SQL、Redis 清库或前端构建。
+
 ## 2026-07-24 普通优惠券基础业务实施边界
 
 - 本轮普通券只使用 MySQL 事务和条件更新：领取扣减 `available_stock`，订单锁定用户券，支付核销，待支付取消释放。没有 Lua、Redis Stream、秒杀入口、全局领取锁、WebSocket、Redis 商品缓存或营业报表。

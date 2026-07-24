@@ -1007,3 +1007,36 @@
 | 2. Backend state and focused tests | completed | Explicit claim result, bulk claimed-state mapping, retry/status/concurrency tests all passed. |
 | 3. Frontend state and feedback | completed | Claimed and in-flight cards disable; success updates the card; stale duplicate result warns and refreshes. |
 | 4. Verification, records, and Git | in_progress | Requested Maven test, package, and frontend build passed; final record and authorized commit/push remain. |
+
+# 2026-07-24 Coupon seckill claim with Redis Stream
+
+**Single milestone:** add the Redis-only, Lua-gated asynchronous claim path for explicitly marked seckill coupons while preserving the existing MySQL transaction path for ordinary coupons. No SQL will be executed automatically.
+
+| Phase | Status | Acceptance evidence |
+|---|---|---|
+| 1. Baseline, schema, and contract gate | completed | Clean `feature/coupon-seckill-stream` confirmed; scope limited to coupon, Redis, specified tests/configuration, and coupon Redis design. |
+| 2. Seckill design and backend implementation | partial | Core implementation was written, but it remains uncompiled and unverified until the required Maven local repository is writable. |
+| 3. Focused real Redis integration coverage | blocked | The exact required Maven command stopped before compilation because `Q:\.m2` cannot be created or written in this session. |
+| 4. Documentation, package, and Git handoff | blocked | Package, diff checks, commit, and push are intentionally deferred because the required targeted test has no result. |
+
+## Non-negotiable constraints
+
+- Only coupons explicitly classified as time-limited high-concurrency activities use Lua -> Redis Stream -> asynchronous MySQL persistence; ordinary claim remains the existing MySQL flow.
+- A single request never uses a global Redisson lock. Redisson may protect only the scheduled pending-recovery task.
+- MySQL remains authoritative: unique `(user_id, coupon_id)` protection, conditional stock decrement, and transaction-based idempotency are all required.
+- No database SQL is executed automatically. If the unique index is missing, produce only a candidate incremental SQL file for human review.
+- Do not modify Redis endpoints/passwords, run unrelated tests, or implement cache, WebSocket, reports, order-rule redesign, or delivery modules.
+
+## Blocking evidence
+
+- `mvn "-Dmaven.repo.local=Q:/.m2" "-Dtest=CouponOrderIntegrationTest,CouponSeckillStreamIntegrationTest" test` was executed once as required and failed before compilation with `Could not create local repository at Q:\.m2` / `Access is denied`.
+- No alternative Maven repository, Redis configuration, database migration, commit, or push was attempted.
+
+## 2026-07-24 Seckill Redis Stream consumer-group compatibility follow-up
+
+| Phase | Status | Acceptance evidence |
+|---|---|---|
+| 1. Diagnose Spring Data Redis API mismatch | completed | `StreamOperations.create(...)` is absent in Spring Data Redis 2.7.18; its API exposes `createGroup(...)`, while the underlying `RedisStreamCommands.xGroupCreate(..., boolean mkStream)` supports the required empty-stream behavior. |
+| 2. Apply minimal compatible group creation | completed | `CouponSeckillServiceImpl` compiles with `xGroupCreate(stream, group, ReadOffset.from("0-0"), true)`, configured `stream-key`/group values, and narrow `BUSYGROUP` recognition. |
+| 3. Focused real Redis validation | blocked | The exact command reached test compilation but every integration test failed to resolve `com.qinghe.life.*` main packages, despite `mvn -DskipTests compile` and `javap` confirming the main artifacts exist. This is outside the allowed seckill-code repair boundary. |
+| 4. Package and authorized Git handoff | blocked | Per requested sequence, package, diff checks, commit, and the one normal push remain deferred until the focused test succeeds. |
