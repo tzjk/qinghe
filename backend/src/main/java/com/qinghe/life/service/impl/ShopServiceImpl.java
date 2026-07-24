@@ -1,7 +1,9 @@
 package com.qinghe.life.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qinghe.life.cache.CachedGoods;
+import com.qinghe.life.cache.CatalogCache;
+import com.qinghe.life.config.CatalogCacheProperties;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qinghe.life.common.PageResult;
@@ -37,19 +39,18 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -63,20 +64,20 @@ public class ShopServiceImpl implements ShopService {
     private final GoodsCategoryMapper goodsCategoryMapper;
     private final CommentMapper commentMapper;
     private final CategoryMapper categoryMapper;
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
+    private final CatalogCache catalogCache;
+    private final CatalogCacheProperties cacheProperties;
     private final AliyunOSSOperator ossOperator;
 
     public ShopServiceImpl(ShopMapper shopMapper, GoodsMapper goodsMapper, GoodsCategoryMapper goodsCategoryMapper, CommentMapper commentMapper,
-                           CategoryMapper categoryMapper, StringRedisTemplate redisTemplate, ObjectMapper objectMapper,
+                           CategoryMapper categoryMapper, CatalogCache catalogCache, CatalogCacheProperties cacheProperties,
                            AliyunOSSOperator ossOperator) {
         this.shopMapper = shopMapper;
         this.goodsMapper = goodsMapper;
         this.goodsCategoryMapper = goodsCategoryMapper;
         this.commentMapper = commentMapper;
         this.categoryMapper = categoryMapper;
-        this.redisTemplate = redisTemplate;
-        this.objectMapper = objectMapper;
+        this.catalogCache = catalogCache;
+        this.cacheProperties = cacheProperties;
         this.ossOperator = ossOperator;
     }
 
@@ -106,20 +107,41 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public PageResult<GoodsVO> goods(Long id, ShopGoodsQuery query) {
-        requireEnabledShop(id);
+        detail(id);
         if (query.getCategoryId() != null) {
             GoodsCategory category = goodsCategoryMapper.selectById(query.getCategoryId());
             if (category == null || !id.equals(category.getShopId()) || !Integer.valueOf(1).equals(category.getStatus())) {
                 return new PageResult<GoodsVO>(java.util.Collections.<GoodsVO>emptyList(), 0L, query.getPage(), query.getSize());
             }
         }
-        IPage<Goods> page = goodsMapper.selectPage(new Page<Goods>(query.getPage(), query.getSize()),
-                Wrappers.<Goods>lambdaQuery().eq(Goods::getShopId, id).eq(Goods::getSaleStatus, "ON_SALE")
-                        .eq(query.getCategoryId() != null, Goods::getCategoryId, query.getCategoryId())
-                        .like(query.getKeyword() != null && !query.getKeyword().trim().isEmpty(), Goods::getName, query.getKeyword())
-                        .orderByDesc(Goods::getSalesCount).orderByDesc(Goods::getId));
-        Map<Long, String> names = goodsCategoryNames(page.getRecords());
-        return pageResult(page, goods -> GoodsVO.fromGoods(goods, names.get(goods.getCategoryId())));
+        List<CachedGoods> cachedGoods = catalogCache.getList(RedisKeys.shopGoods(id), RedisKeys.shopGoodsLock(id), CachedGoods.class,
+                cacheProperties.getListTtlMinutes(), () -> loadShopGoods(id));
+        List<CachedGoods> filtered = cachedGoods.stream()
+                .filter(goods -> query.getCategoryId() == null || query.getCategoryId().equals(goods.getCategoryId()))
+                .filter(goods -> query.getKeyword() == null || query.getKeyword().trim().isEmpty()
+                        || goods.getName().contains(query.getKeyword().trim()))
+                .collect(Collectors.toList());
+        long total = filtered.size();
+        int fromIndex = (int) Math.min((query.getPage() - 1L) * query.getSize(), total);
+        int toIndex = (int) Math.min(fromIndex + query.getSize(), total);
+        List<CachedGoods> requested = filtered.subList(fromIndex, toIndex);
+        if (requested.isEmpty()) {
+            return new PageResult<GoodsVO>(Collections.<GoodsVO>emptyList(), total, query.getPage(), query.getSize());
+        }
+        Map<Long, Goods> currentGoods = new HashMap<Long, Goods>();
+        for (Goods current : goodsMapper.selectBatchIds(requested.stream().map(CachedGoods::getId).collect(Collectors.toList()))) {
+            if ("ON_SALE".equals(current.getSaleStatus()) && id.equals(current.getShopId())) {
+                currentGoods.put(current.getId(), current);
+            }
+        }
+        List<GoodsVO> records = new ArrayList<GoodsVO>();
+        for (CachedGoods cached : requested) {
+            Goods current = currentGoods.get(cached.getId());
+            if (current != null) {
+                records.add(cached.toGoodsVO(current));
+            }
+        }
+        return new PageResult<GoodsVO>(records, total, query.getPage(), query.getSize());
     }
 
     @Override
@@ -165,6 +187,7 @@ public class ShopServiceImpl implements ShopService {
     }
 
     @Override
+    @Transactional
     public AdminShopVO createAdminShop(AdminShopSaveRequest request) {
         Category category = requireEnabledCategory(request.getCategoryId());
         Shop shop = new Shop();
@@ -177,6 +200,7 @@ public class ShopServiceImpl implements ShopService {
     }
 
     @Override
+    @Transactional
     public AdminShopVO updateAdminShop(Long id, AdminShopSaveRequest request) {
         Shop shop = requireShop(id);
         Category category = requireEnabledCategory(request.getCategoryId());
@@ -189,6 +213,7 @@ public class ShopServiceImpl implements ShopService {
     }
 
     @Override
+    @Transactional
     public void updateAdminShopStatus(Long id, AdminShopStatusRequest request) {
         Shop shop = requireShop(id);
         shop.setStatus(request.getStatus());
@@ -199,6 +224,7 @@ public class ShopServiceImpl implements ShopService {
     }
 
     @Override
+    @Transactional
     public AdminShopVO uploadAdminShopCover(Long id, MultipartFile file) {
         Shop shop = requireShop(id);
         ValidatedCover image = validateCover(file);
@@ -296,11 +322,15 @@ public class ShopServiceImpl implements ShopService {
     }
 
     private void invalidateShopCache(Long shopId) {
-        try {
-            redisTemplate.delete(Arrays.asList(RedisKeys.shopDetail(shopId), RedisKeys.shopNull(shopId)));
-        } catch (Exception exception) {
-            log.warn("店铺缓存清理失败，shopId={}，type={}", shopId, exception.getClass().getSimpleName());
+        List<String> keys = new ArrayList<String>();
+        keys.add(RedisKeys.shopDetail(shopId));
+        keys.add(RedisKeys.shopGoods(shopId));
+        if (goodsMapper != null) {
+            for (Goods goods : goodsMapper.selectList(Wrappers.<Goods>lambdaQuery().eq(Goods::getShopId, shopId))) {
+                keys.add(RedisKeys.goodsDetail(goods.getId()));
+            }
         }
+        catalogCache.evictAfterCommit(keys);
     }
 
     private ValidatedCover validateCover(MultipartFile file) {
@@ -414,46 +444,23 @@ public class ShopServiceImpl implements ShopService {
         private ValidatedCover(byte[] bytes, String contentType) { this.bytes = bytes; this.contentType = contentType; }
     }
 
-    private ShopVO cachedDetail(Long id) throws Exception {
-        String cacheKey = RedisKeys.shopDetail(id);
-        String cached = redisTemplate.opsForValue().get(cacheKey);
-        if (cached != null) {
-            return objectMapper.readValue(cached, ShopVO.class);
-        }
-        if (redisTemplate.hasKey(RedisKeys.shopNull(id))) {
+    private ShopVO cachedDetail(Long id) {
+        ShopVO result = catalogCache.getObject(RedisKeys.shopDetail(id), RedisKeys.shopLock(id), ShopVO.class,
+                cacheProperties.getShopTtlMinutes(), () -> {
+                    Shop shop = shopMapper.selectById(id);
+                    return shop == null || !Integer.valueOf(1).equals(shop.getStatus()) ? null : ShopVO.fromShop(shop);
+                });
+        if (result == null) {
             throw new BusinessException(404, "商铺不存在或不可用");
         }
-        for (int attempt = 0; attempt < 3; attempt++) {
-            Boolean locked = redisTemplate.opsForValue().setIfAbsent(RedisKeys.shopLock(id), "1", 10, TimeUnit.SECONDS);
-            if (Boolean.TRUE.equals(locked)) {
-                try {
-                    String doubleChecked = redisTemplate.opsForValue().get(cacheKey);
-                    if (doubleChecked != null) {
-                        return objectMapper.readValue(doubleChecked, ShopVO.class);
-                    }
-                    Shop shop = shopMapper.selectById(id);
-                    if (shop == null || !Integer.valueOf(1).equals(shop.getStatus())) {
-                        redisTemplate.opsForValue().set(RedisKeys.shopNull(id), "1", 2, TimeUnit.MINUTES);
-                        throw new BusinessException(404, "商铺不存在或不可用");
-                    }
-                    ShopVO result = ShopVO.fromShop(shop);
-                    long ttlMinutes = 30 + ThreadLocalRandom.current().nextLong(1, 6);
-                    redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(result), ttlMinutes, TimeUnit.MINUTES);
-                    return result;
-                } finally {
-                    redisTemplate.delete(RedisKeys.shopLock(id));
-                }
-            }
-            Thread.sleep(50L);
-            cached = redisTemplate.opsForValue().get(cacheKey);
-            if (cached != null) {
-                return objectMapper.readValue(cached, ShopVO.class);
-            }
-            if (redisTemplate.hasKey(RedisKeys.shopNull(id))) {
-                throw new BusinessException(404, "商铺不存在或不可用");
-            }
-        }
-        return ShopVO.fromShop(requireEnabledShop(id));
+        return result;
+    }
+
+    private List<CachedGoods> loadShopGoods(Long shopId) {
+        List<Goods> goods = goodsMapper.selectList(Wrappers.<Goods>lambdaQuery().eq(Goods::getShopId, shopId)
+                .eq(Goods::getSaleStatus, "ON_SALE").orderByDesc(Goods::getSalesCount).orderByDesc(Goods::getId));
+        Map<Long, String> names = goodsCategoryNames(goods);
+        return goods.stream().map(item -> CachedGoods.from(item, names.get(item.getCategoryId()))).collect(Collectors.toList());
     }
 
     private <T, R> PageResult<R> pageResult(IPage<T> page, java.util.function.Function<T, R> converter) {

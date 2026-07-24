@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qinghe.life.common.PageResult;
+import com.qinghe.life.cache.CatalogCache;
 import com.qinghe.life.dto.AdminGoodsQuery;
 import com.qinghe.life.dto.AdminGoodsSaveRequest;
 import com.qinghe.life.dto.GoodsStatusRequest;
@@ -11,6 +12,7 @@ import com.qinghe.life.dto.GoodsStockRequest;
 import com.qinghe.life.entity.Goods;
 import com.qinghe.life.entity.GoodsCategory;
 import com.qinghe.life.entity.Shop;
+import com.qinghe.life.utils.RedisKeys;
 import com.qinghe.life.exception.BusinessException;
 import com.qinghe.life.mapper.GoodsCategoryMapper;
 import com.qinghe.life.mapper.GoodsMapper;
@@ -28,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Arrays;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
@@ -51,18 +54,20 @@ public class AdminGoodsServiceImpl implements AdminGoodsService {
     private final ShopMapper shopMapper;
     private final GoodsCategoryMapper goodsCategoryMapper;
     private final AliyunOSSOperator ossOperator;
+    private final CatalogCache catalogCache;
 
     @Autowired
     public AdminGoodsServiceImpl(GoodsMapper goodsMapper, ShopMapper shopMapper, GoodsCategoryMapper goodsCategoryMapper,
-                                 AliyunOSSOperator ossOperator) {
+                                 AliyunOSSOperator ossOperator, CatalogCache catalogCache) {
         this.goodsMapper = goodsMapper;
         this.shopMapper = shopMapper;
         this.goodsCategoryMapper = goodsCategoryMapper;
         this.ossOperator = ossOperator;
+        this.catalogCache = catalogCache;
     }
 
     public AdminGoodsServiceImpl(GoodsMapper goodsMapper, ShopMapper shopMapper, AliyunOSSOperator ossOperator) {
-        this(goodsMapper, shopMapper, null, ossOperator);
+        this(goodsMapper, shopMapper, null, ossOperator, null);
     }
 
     @Override
@@ -88,6 +93,7 @@ public class AdminGoodsServiceImpl implements AdminGoodsService {
     }
 
     @Override
+    @Transactional
     public AdminGoodsVO create(AdminGoodsSaveRequest request) {
         requireEnabledShop(request.getShopId());
         Goods goods = new Goods();
@@ -96,6 +102,7 @@ public class AdminGoodsServiceImpl implements AdminGoodsService {
         if (goodsMapper.insert(goods) != 1) {
             throw new BusinessException("商品保存失败，请稍后重试");
         }
+        invalidateGoodsCache(goods.getId(), goods.getShopId());
         return toAdminGoodsVO(goods);
     }
 
@@ -103,6 +110,7 @@ public class AdminGoodsServiceImpl implements AdminGoodsService {
     @Transactional
     public AdminGoodsVO update(Long id, AdminGoodsSaveRequest request) {
         Goods goods = requireGoods(id);
+        Long originalShopId = goods.getShopId();
         Long originalCategoryId = goods.getCategoryId();
         requireEnabledShop(request.getShopId());
         applyRequest(goods, request, false);
@@ -114,28 +122,34 @@ public class AdminGoodsServiceImpl implements AdminGoodsService {
                 .eq(Goods::getId, id).set(Goods::getCategoryId, null)) != 1) {
             throw new BusinessException("商品分类清空失败，请稍后重试");
         }
+        invalidateGoodsCache(id, originalShopId, goods.getShopId());
         return toAdminGoodsVO(goods);
     }
 
     @Override
+    @Transactional
     public void status(Long id, GoodsStatusRequest request) {
         Goods goods = requireGoods(id);
         goods.setSaleStatus(request.getSaleStatus());
         if (goodsMapper.updateById(goods) != 1) {
             throw new BusinessException("商品状态保存失败，请稍后重试");
         }
+        invalidateGoodsCache(id, goods.getShopId());
     }
 
     @Override
+    @Transactional
     public void stock(Long id, GoodsStockRequest request) {
         Goods goods = requireGoods(id);
         goods.setStock(request.getStock());
         if (goodsMapper.updateById(goods) != 1) {
             throw new BusinessException("商品库存保存失败，请稍后重试");
         }
+        invalidateGoodsCache(id, goods.getShopId());
     }
 
     @Override
+    @Transactional
     public AdminGoodsVO image(Long id, MultipartFile file) {
         Goods goods = requireGoods(id);
         ValidatedImage image = validateImage(file);
@@ -164,6 +178,7 @@ public class AdminGoodsServiceImpl implements AdminGoodsService {
             log.error("商品主图保存失败，goodsId={}，type={}", id, exception.getClass().getSimpleName());
             throw new BusinessException(503, "商品主图保存失败，请稍后重试");
         }
+        invalidateGoodsCache(id, goods.getShopId());
         safelyDeleteOldImage(oldImageUrl);
         return toAdminGoodsVO(goods);
     }
@@ -234,6 +249,20 @@ public class AdminGoodsServiceImpl implements AdminGoodsService {
             throw new BusinessException(404, "商品不存在");
         }
         return goods;
+    }
+
+    private void invalidateGoodsCache(Long goodsId, Long... shopIds) {
+        if (catalogCache == null) {
+            return;
+        }
+        List<String> keys = new ArrayList<String>();
+        keys.add(RedisKeys.goodsDetail(goodsId));
+        for (Long shopId : shopIds) {
+            if (shopId != null) {
+                keys.add(RedisKeys.shopGoods(shopId));
+            }
+        }
+        catalogCache.evictAfterCommit(keys);
     }
 
     private Shop requireEnabledShop(Long id) {

@@ -37,6 +37,17 @@ mybatis-plus:
 qinghe:
   redis-key-prefix: "qh:"
 
+catalog:
+  cache:
+    shop-ttl-minutes: 30
+    goods-ttl-minutes: 20
+    list-ttl-minutes: 10
+    null-ttl-minutes: 2
+    ttl-jitter-minutes: 5
+    lock-wait-millis: 100
+    lock-lease-seconds: 10
+    lock-max-retries: 3
+
 order:
   payment-timeout-minutes: 15
   timeout:

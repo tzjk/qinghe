@@ -121,7 +121,7 @@ M2A 验证码获取与登录链路为 `awaiting_manual_verification`；M2B 已�
 
 - M2A：验证码、登录、Redis Token、当前用户、资料更新、退出及前端登录状态。
 - M2B：分类、首页六区摘要、商铺分页/筛选/详情/商品/评论、商品分页与详情。
-- 商铺详情缓存：`qh:shop:detail:{shopId}`、`qh:shop:null:{shopId}`、`qh:lock:shop:{shopId}`；包含 Cache Aside、空值缓存、随机 TTL、有限锁重试及 Redis 异常降级。
+- 目录缓存已统一为 `qh:cache:shop:{shopId}`、`qh:cache:goods:{goodsId}`、`qh:cache:shop-goods:{shopId}`；对应锁为 `qh:lock:cache:*`。包含显式空值、配置化随机 TTL、有限 Redisson 重建、坏缓存删除和 Redis 异常回源。
 - 前端：`category.js`、`home.js`、`shop.js`、`goods.js` 均复用 `http.js`；首页、商铺列表、商铺详情已接入真实接口并处理加载、空数据和错误状态。
 - M3A 地址管理：当前用户地址查询、新增、修改、删除和默认地址切换；已实现首地址默认和默认地址删除后的自动补选。
 - M3A 结构门禁：用户已人工执行一次 `m3a_increment.sql`；四张目标表实际结构、实体、基线 SQL和设计文档现已一致。
@@ -579,3 +579,9 @@ ORDER BY table_name, constraint_name;
 - `mvn "-Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest,OrderTimeoutCancelIntegrationTest,CouponOrderIntegrationTest" test` 在 `Q:\backend` 使用默认 Maven 本地仓库通过：40 tests、0 failures、0 errors、0 skipped（优惠券专项 20 项）。
 - `mvn -DskipTests package` 成功并生成 `Q:\backend\target\qinghe-life-backend-1.0.0.jar`；真实 `frontend` 路径 Vite 构建在修复 `AdminCouponView.vue` 缺失的表格列闭合标签后成功（1741 modules）。
 - `COUPON_ORDER_TEST_` 的优惠券、用户券、订单、明细、购物车、地址、商品、店铺、操作日志和用户均经只读计数确认残留为 0。未开始 Lua、Redis Stream、秒杀券、Redis 商品缓存、WebSocket 或营业报表。
+
+## 2026-07-24 店铺与商品 Redis 热点缓存：完成并验证
+
+- 公开店铺详情、商品详情和指定店铺上架商品列表共用 `CatalogCache`：显式空值标记、JSON 坏值删除、配置化基础 TTL+抖动、有限 Redisson 业务 Key 锁和 Redis/锁异常 MySQL 降级均集中实现。商品库存与销量不作为缓存权威数据，响应时仍从 MySQL 读取。
+- 店铺、商品的管理员写入均在事务提交成功后精确失效。店铺失效同时覆盖本店详情、商品列表和本店商品详情；商品新增/修改/上下架/库存或主图修改删除商品详情和所属店铺列表，商品换店同时删除新旧店铺列表。失败仅记录日志。
+- 验证：`CatalogCacheIntegrationTest,AdminShopIntegrationTest,AdminGoodsIntegrationTest,ShopCoverServiceTest,GoodsImageServiceTest` 共 12/0/0/0；`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功生成后端 JAR。未执行 SQL、前端构建或范围外测试。
