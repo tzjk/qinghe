@@ -20,6 +20,7 @@
         <java.version>1.8</java.version>
         <maven.compiler.release>8</maven.compiler.release>
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
+        <redisson.version>3.27.2</redisson.version>
     </properties>
 
     <dependencies>
@@ -42,6 +43,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson</artifactId>
+            <version>${redisson.version}</version>
         </dependency>
         <dependency>
             <groupId>com.aliyun.oss</groupId>

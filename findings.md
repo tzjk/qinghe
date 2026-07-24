@@ -1,5 +1,14 @@
 # 活动发现
 
+## 2026-07-24 订单超时取消与多实例任务锁：静态门禁
+
+- 当前分支与干净工作区已在本轮唯一的开始检查中确认：`feature/order-timeout-lock`。
+- `Order` 已映射 `payExpireTime`、`cancelTime`、`cancelReason` 与 `status`；候选迁移 `backend/src/main/resources/sql/order_lifecycle_schema_increment.sql` 提供 `(status, pay_expire_time)` 索引，但本轮不执行 SQL。
+- 现有 `cancelPendingOrder` 已复用订单明细库存恢复和直接 `qh_operate_log` 写入；超时路径仍缺少 `pay_expire_time <= now` 的条件更新、每笔独立事务和可配置批量。
+- 现有 `OrderPaymentTimeoutTask` 仅硬编码 cron 并直接触发 Service；项目尚无 Redisson 依赖或客户端配置。
+- 模拟支付已使用 `PENDING_PAY` 条件更新，但需要把支付截止时间也加入原子更新，才能与超时取消共享最终并发保障。
+- 实现与专项验证完成：`OrderCancellationService` 是用户/超时取消共用的资源释放内核；`OrderTimeoutCancelService` 逐批扫描并通过跨 Bean 调用确保每笔 `REQUIRED` 事务。指定订单测试为 20/0/0/0，真实 Redis/Redisson 锁测试已执行；跳过测试打包成功。
+
 ## 2026-07-19 学籍异动、批量毕业与二维码批量管理：实施前恢复
 
 - 本轮实施以 `docs/academic-dorm-batch-audit.md` 为业务设计依据，但现有代码、实体、Mapper、测试和本轮命令输出仍是最终事实来源；此前审计不是实施或验证完成的证据。

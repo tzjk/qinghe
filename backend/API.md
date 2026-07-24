@@ -268,4 +268,5 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 | POST | `/api/admin/orders/{orderId}/complete` | 管理员 | 仅 `DELIVERING -> COMPLETED`。 |
 
 - 新订单由服务端写入 `createTime` 与默认 15 分钟 `payExpireTime`；客户端不能提交用户、状态、金额或时间字段。
-- 支付、用户取消和超时取消均使用 `id + status`（用户操作另含 `user_id`）条件更新，因此支付与取消并发时只有一个操作成功。超时任务每分钟扫描一批 `PENDING_PAY AND pay_expire_time <= now` 订单；多实例任务锁是后续增强，数据库条件更新仍为最终正确性保障。
+- 支付条件更新同时要求 `pay_expire_time >= 当前服务端时间`。超时取消条件为 `id + PENDING_PAY + pay_expire_time <= 当前服务端时间`；只有更新成功才在同一 `REQUIRED` 事务恢复订单明细对应库存并写一条 `qh_operate_log`。支付与取消竞争时仅允许一个状态更新成功。
+- 超时任务由 `order.timeout.enabled`、`cron`、`batch-size`、`lock-wait-seconds`、`lock-lease-seconds` 配置。默认每分钟按 100 条扫描；Redisson 使用现有 `spring.redis` 连接获取 `qh:lock:order:timeout-cancel`，未获锁或 Redis/锁异常即结束本轮，数据库条件更新仍为最终正确性保障。
