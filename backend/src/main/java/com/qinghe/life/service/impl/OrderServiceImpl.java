@@ -29,6 +29,7 @@ import com.qinghe.life.mapper.UserAddressMapper;
 import com.qinghe.life.mapper.UserMapper;
 import com.qinghe.life.mapper.OperateLogMapper;
 import com.qinghe.life.service.OrderService;
+import com.qinghe.life.service.CouponService;
 import com.qinghe.life.service.OrderTimeoutCancelService;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.utils.AdminContext;
@@ -69,6 +70,7 @@ public class OrderServiceImpl implements OrderService {
     private final UserMapper userMapper;
     private final OrderCancellationService orderCancellationService;
     private final OrderTimeoutCancelService orderTimeoutCancelService;
+    private final CouponService couponService;
     private final OperateLogMapper operateLogMapper;
 
     @Value("${order.payment-timeout-minutes:15}")
@@ -78,7 +80,8 @@ public class OrderServiceImpl implements OrderService {
                             UserAddressMapper userAddressMapper, CampusMapper campusMapper,
                             BuildingMapper buildingMapper, OrderMapper orderMapper, OrderItemMapper orderItemMapper,
                             UserMapper userMapper, OrderCancellationService orderCancellationService,
-                            OrderTimeoutCancelService orderTimeoutCancelService, OperateLogMapper operateLogMapper) {
+                            OrderTimeoutCancelService orderTimeoutCancelService, CouponService couponService,
+                            OperateLogMapper operateLogMapper) {
         this.cartMapper = cartMapper;
         this.goodsMapper = goodsMapper;
         this.shopMapper = shopMapper;
@@ -90,6 +93,7 @@ public class OrderServiceImpl implements OrderService {
         this.userMapper = userMapper;
         this.orderCancellationService = orderCancellationService;
         this.orderTimeoutCancelService = orderTimeoutCancelService;
+        this.couponService = couponService;
         this.operateLogMapper = operateLogMapper;
     }
 
@@ -156,12 +160,7 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(404, "地址不存在或无权使用");
         }
         Campus campus = requireActiveCampusAddress(address);
-        BigDecimal discountAmount = ZERO_AMOUNT;
         BigDecimal deliveryFee = ZERO_AMOUNT;
-        BigDecimal payAmount = totalAmount.subtract(discountAmount).add(deliveryFee);
-        if (payAmount.compareTo(ZERO_AMOUNT) < 0) {
-            throw new BusinessException(400, "订单应付金额无效");
-        }
 
         Order order = new Order();
         LocalDateTime now = LocalDateTime.now();
@@ -183,14 +182,24 @@ public class OrderServiceImpl implements OrderService {
         order.setAddressDetail(address.getDetail());
         order.setDeliveryAddress(addressSummary(order));
         order.setTotalAmount(totalAmount);
-        order.setDiscountAmount(discountAmount);
+        order.setDiscountAmount(ZERO_AMOUNT);
         order.setDeliveryFee(deliveryFee);
-        order.setPayAmount(payAmount);
+        order.setPayAmount(totalAmount.add(deliveryFee));
         order.setStatus(OrderStatus.PENDING_PAY.getCode());
         order.setCreateTime(now);
         order.setPayExpireTime(now.plusMinutes(paymentTimeoutMinutes));
         order.setRemark(trimToNull(request.getRemark()));
         orderMapper.insert(order);
+        BigDecimal discountAmount = couponService.lockForOrder(userId, request.getUserCouponId(), shopId, totalAmount, order.getId(), now);
+        BigDecimal payAmount = totalAmount.subtract(discountAmount).add(deliveryFee);
+        if (payAmount.compareTo(ZERO_AMOUNT) < 0) {
+            throw new BusinessException(400, "订单应付金额无效");
+        }
+        order.setDiscountAmount(discountAmount);
+        order.setPayAmount(payAmount);
+        if (orderMapper.updateById(order) != 1) {
+            throw new BusinessException(409, "订单状态已变化，请刷新后重试");
+        }
         for (OrderItem item : orderItems) {
             item.setOrderId(order.getId());
             orderItemMapper.insert(item);
@@ -244,6 +253,7 @@ public class OrderServiceImpl implements OrderService {
         if (updated != 1) {
             throw new BusinessException(409, "订单状态已变化，请刷新后重试");
         }
+        couponService.redeemForOrder(orderId, now);
         Order paid = orderMapper.selectById(orderId);
         writeOperationLog(userId, "用户模拟支付订单", orderId, "OrderService", "simulatePay");
         return userViews(Collections.singletonList(paid), true).get(0);

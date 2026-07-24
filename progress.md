@@ -1,5 +1,20 @@
 # 活动进度
 
+## 2026-07-24 优惠券基础业务与普通订单使用：实施结果（未收口）
+
+- 完成候选人工增量 SQL `backend/src/main/resources/sql/coupon_foundation_increment.sql`；只读实库确认所需字段仍不存在，脚本未执行。
+- 完成后端普通券模型、枚举、用户/管理员 API、领取/锁券/核销/取消释放以及订单创建 DTO/服务联动；完成用户优惠券页、结算页券选择/金额展示、后台优惠管理页/路由/API。未接入禁止的秒杀、Lua、Redis Stream、全局领取锁、WebSocket、商品缓存或报表。
+- 未完成 `CouponOrderIntegrationTest`：不能把未执行候选迁移和未运行测试环境伪造成覆盖。待人工迁移后须补齐 18 个指定场景并运行用户指定 Maven 命令。
+- 验证：指定 Maven 专项命令执行一次即因 `Q:\.m2` Access is denied 停止，未到编译或 Surefire；因此未运行后端 package。前端 `D:/develop/NodeJS/npm.cmd run build` 执行一次，esbuild 因工作区上级目录读取受限且无法加载 `vite.config.js` 失败。
+- 未提交、未推送：专项不通过，按规则停止等待人工审核/迁移与环境恢复。
+
+## 2026-07-24 优惠券基础业务与普通订单使用
+
+- 已按用户书面授权仅执行一次 `git status -sb` 和 `git branch --show-current`：当前 `feature/coupon-foundation`，工作区干净。
+- 已读取指定优惠券/订单源码、前端骨架、设计/API 文档及候选迁移；未读取或审计宿舍、学籍、资产模块。
+- 已对本机 `qinghe_life` 执行只读 `information_schema` 查询：两张券表仍是旧字段，缺少本轮必需字段；未执行 DDL/DML/SQL 导入，下一步只生成候选人工迁移。
+- 已将本轮五阶段计划写入 `task_plan.md`，阶段 1 完成。当前进行阶段 2：在不触及无关模块的前提下实现 MySQL 普通领取与订单券生命周期。
+
 ## 2026-07-24 订单超时取消与多实例任务锁：实施中
 
 - 已按本轮唯一开始检查确认 `feature/order-timeout-lock` 与干净工作区；未 fetch、pull、reset、rebase、clean 或执行 SQL。
@@ -558,3 +573,10 @@
 - `mvn -Dmaven.repo.local=Q:\.m2 -DskipTests package`：成功，生成 `backend/target/qinghe-life-backend-1.0.0.jar`。
 - `D:/develop/NodeJS/npm.cmd run build`：成功，1736 modules；仅既有第三方 PURE 注释与大 chunk 警告。
 - 测试前缀用户、店铺、商品、订单、明细、购物车、地址残留计数均为 0。
+
+## 2026-07-24 普通优惠券基础模块：验证与收口
+
+- 真实 `qh_coupon/qh_user_coupon` 的集成测试映射验证通过；未运行迁移 SQL。`coupon_foundation_increment.sql` 已标记为用户人工完成结构后的保留参考。
+- 优惠券业务复核：普通领取使用 MySQL 事务和 `available_stock > 0` 条件扣减；用户券状态固定为 `AVAILABLE -> LOCKED -> USED`，主动/超时取消按过期状态回到 `AVAILABLE` 或转为 `EXPIRED`。订单仅接收 `userCouponId`，服务端计算 `discountAmount/payAmount`，且释放与库存恢复同一事务。
+- `mvn "-Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest,OrderTimeoutCancelIntegrationTest,CouponOrderIntegrationTest" test` 实际为 40 tests、0 failures、0 errors、0 skipped；其中 `CouponOrderIntegrationTest` 为 20 项。随后 `mvn -DskipTests package` 成功，生成 `Q:\backend\target\qinghe-life-backend-1.0.0.jar`。
+- 首次前端 build 定位到 `AdminCouponView.vue` 的 `el-table-column` 缺失结束标签；只修复该模板标签后，真实 frontend 路径 build 成功（1741 modules）。`COUPON_ORDER_TEST_` 精确只读残留检查的 10 个表/范围均为 0。

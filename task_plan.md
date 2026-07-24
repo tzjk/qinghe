@@ -1,3 +1,30 @@
+# 优惠券基础业务与普通订单使用（2026-07-24）
+
+**本轮唯一里程碑：** 在既有普通订单创建、模拟支付、用户取消和超时取消链路上，实现普通优惠券的模型审计、管理、用户领取、订单锁定/核销/释放、前后端页面与专项集成测试。仅使用 MySQL 事务和条件更新；不执行 SQL，不实现 Lua 抢券、Redis Stream、秒杀、全局领取锁、WebSocket、Redis 商品缓存或营业报表。
+
+| 阶段 | 状态 | 交付与判定 |
+|---|---|---|
+| 1. 基线、结构审计与业务设计 | completed | 当前一次 Git 基线检查确认分支为 `feature/coupon-foundation`；用户已人工完成真实表结构和索引，本轮只通过集成测试核对映射，不执行 SQL。 |
+| 2. 后端优惠券管理、领取与订单联动 | completed | 状态、事务、条件更新、订单金额、支付核销与取消释放经 40 项订单/优惠券专项验证。 |
+| 3. 用户端与管理端页面 | completed | 仅修复 `AdminCouponView.vue` 缺失的模板闭合标签；真实路径 Vite build 成功。 |
+| 4. CouponOrderIntegrationTest 与指定验证 | completed | `CouponOrderIntegrationTest` 20 项及三个既有订单专项合计 40/0/0/0；默认 Maven 本地仓库的 package 成功。 |
+| 5. 指定文档与 Git 收口 | completed | 指定文档、残留核验、差异/敏感产物检查和 staged diff check 均完成；本轮以单一功能提交收口，并按授权仅尝试一次推送。 |
+
+### 本轮不可变约束
+
+- `total_amount` 只表示商品原始总额，`pay_amount` 只表示优惠后实际应付金额；金额使用 `BigDecimal` 和统一舍入规则，绝不新增 `goods_amount`。
+- 用户优惠券状态只允许 `AVAILABLE → LOCKED → USED`，失败或取消回到 `AVAILABLE`，取消时已过使用期限转为 `EXPIRED`；状态常量不得散落在 Controller、Service 或前端。
+- 下单客户端只能提交 `userCouponId`，优惠金额及订单实付由服务端基于当前用户、店铺、金额和时间计算。
+- 普通领取与订单锁定均以 MySQL 条件更新作为并发最终保障，写操作复用 `qh_operate_log`，不新增日志表或 SQL 执行。
+- 本轮只触及优惠券和订单相关代码、测试、页面及用户指定文档；不审计或修改宿舍、学籍、资产模块。
+
+### 阶段 1 事实与错误记录
+
+- 一次授权 Git 基线检查显示 `## feature/coupon-foundation...origin/feature/coupon-foundation` 且当前分支为 `feature/coupon-foundation`；不再重复执行状态检查。
+- 只读 `information_schema` 已确认实库 `qh_coupon` 仅有 `claimed_count/coupon_status/start_time/end_time`，`qh_user_coupon` 仅有 `coupon_status/claim_time/use_time` 和 `(user_id,coupon_id)` 唯一索引；缺少本轮所需库存可用数、领取/使用双窗口、店铺、限领、锁定时间、过期快照和统一 `status`。
+- 既有 `coupon_core_increment.sql` 是历史候选；`coupon_foundation_increment.sql` 作为用户已人工完成结构的参考保留，不执行、不生成第二份、不删除。
+- 本轮不得修改真实业务数据；测试数据必须使用唯一前缀、测试内精确清理，且不能使用 TRUNCATE、无条件 DELETE 或 Redis 全库/全前缀清理。
+
 # 订单超时取消与多实例任务锁（2026-07-24）
 
 **本轮唯一里程碑：** 在既有订单生命周期基础上，实现由 Spring Task 触发、Redisson 多实例锁保护的超时未支付订单取消；条件更新、精确库存恢复与统一 `qh_operate_log` 必须在每笔订单的同一 `REQUIRED` 事务中完成。只覆盖订单专项测试、指定文档与 Git 收口；不实现优惠券、Redis Stream、WebSocket、缓存、报表或外卖员系统，也不执行 SQL。

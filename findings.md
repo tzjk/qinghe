@@ -1,5 +1,22 @@
 # 活动发现
 
+## 2026-07-24 优惠券基础业务与普通订单使用：实施/验证阻断
+
+- 已生成未执行候选 `backend/src/main/resources/sql/coupon_foundation_increment.sql` 并将领域模型切换为本轮字段与集中状态枚举；脚本保留旧字段和 `(user_id,coupon_id)` 唯一索引，未删除/重命名列或自动导入 SQL。
+- 已实现 `CouponServiceImpl` 的普通领取、用户券查询/延迟过期、订单锁定、支付核销和取消释放；`OrderServiceImpl` 仅从 `OrderCreateDTO.userCouponId` 读取券编号，金额仍在服务端计算。`OrderCancellationService` 在订单条件取消、库存恢复后于同一事务释放该订单锁券。
+- 管理员通过 `AdminCouponServiceImpl` 和 `AdminContext` 新建、编辑未开始券、启停及读取领取/使用统计；Controller 写操作使用现有 `@OperateLog`，未新增日志表。
+- 本轮指定 Maven 命令只执行一次，失败于 `Could not create local repository at Q:\.m2: Access is denied`，没有编译、Surefire 或测试计数。后端 package 因专项未通过未运行。
+- 前端生产构建执行一次后失败于 esbuild 受限读取 `../../../../..`，无法解析工作区 `vite.config.js`；这是环境文件访问证据，不是前端业务断言或构建成功。
+- 完整 `CouponOrderIntegrationTest` 尚未添加；在实库候选迁移未手工执行且 Maven 测试运行环境不可用时，不能伪造 18 项测试覆盖或称本轮完成。
+
+## 2026-07-24 优惠券基础业务与普通订单使用：阶段 1 审计
+
+- 基线：一次授权 Git 检查确认当前为 `feature/coupon-foundation`，工作区干净。
+- 实库只读核查：`qh_coupon` 当前为 `id/name/coupon_type/discount_amount/threshold_amount/total_stock/claimed_count/coupon_status/start_time/end_time/create_time/update_time`；`qh_user_coupon` 当前为 `id/user_id/coupon_id/order_id/coupon_status/claim_time/use_time/create_time/update_time`，唯一索引为 `(user_id,coupon_id)`。
+- 因此实库尚缺本轮状态/时间/库存语义：券缺 `available_stock/receive_start_time/receive_end_time/use_start_time/use_end_time/shop_id/per_user_limit/status`，用户券缺 `status/receive_time/lock_time/expire_time`。按约束只能生成候选人工增量 SQL，不能执行、删除或重命名旧列。
+- 旧唯一索引只允许同一用户持有同一优惠券一张；本轮普通券服务将要求 `perUserLimit=1`，并让该唯一约束作为重复提交最终兜底。
+- 现有订单创建已经服务端重算总额、优惠额、配送费和实付；支付采用 `id + user_id + PENDING_PAY + pay_expire_time` 条件更新，取消内核先条件取消再恢复库存/写统一日志。优惠券锁定、核销和释放应嵌入这些同一业务事务。
+
 ## 2026-07-24 订单超时取消与多实例任务锁：静态门禁
 
 - 当前分支与干净工作区已在本轮唯一的开始检查中确认：`feature/order-timeout-lock`。

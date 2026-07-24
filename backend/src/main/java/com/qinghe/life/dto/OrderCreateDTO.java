@@ -18,6 +18,8 @@ public class OrderCreateDTO {
     @NotNull(message = "请选择收货地址")
     private Long addressId;
 
+    private Long userCouponId;
+
     @Size(max = 255, message = "备注不能超过255个字符")
     private String remark;
 }
