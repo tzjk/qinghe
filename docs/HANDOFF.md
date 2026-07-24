@@ -551,3 +551,10 @@ ORDER BY table_name, constraint_name;
 - 已完成用户列表/详情、模拟支付、待支付取消及精确库存恢复；管理员列表/详情、接单、开始配送、完成订单；以及每分钟超时取消任务。支付、取消和超时取消的状态竞争均以数据库条件更新收敛。
 - 已完成用户与管理员订单页面，复用单一 HTTP 实例和既有身份守卫。订单专项为 13/0/0/0（原创建 5、生命周期 8），后端 package 与前端 build 均成功；测试前缀数据残留为 0。
 - 未实现优惠券、Redis Stream、WebSocket、缓存、营业报表、真实支付、骑手或配送轨迹。多实例超时任务锁保留为后续增强，不能替代现有数据库条件更新。
+
+## 2026-07-24 订单超时取消与多实例任务锁（完成并验证）
+
+- 新增 `OrderTimeoutCancelService` 扫描 `PENDING_PAY AND pay_expire_time <= now`，默认每批 100 条；每笔调用独立代理事务。`OrderCancellationService` 是用户取消与超时取消共用的资源释放内核：条件更新成功后精确按 `qh_order_item` 恢复库存、直接写一次 `qh_operate_log`，保留订单/明细且不恢复购物车。
+- 支付条件更新也要求 `pay_expire_time >= now`；超时取消条件同时限制 `id`、`PENDING_PAY` 和截止时间。数据库条件更新是支付/取消并发与重复扫描的最终幂等保障。
+- `OrderPaymentTimeoutTask` 仅以 Redisson 的 `qh:lock:order:timeout-cancel` 获取有限等待和租约锁并触发扫描。Redisson 复用 `spring.redis`，未获锁、Redis 异常或锁异常均结束本轮，且仅当前线程持锁才解锁。
+- 本轮指定订单测试为 20/0/0/0（新增 `OrderTimeoutCancelIntegrationTest` 7 项，含真实 Redis 锁未获得与释放后重试）；`mvn -Dmaven.repo.local=Q:/.m2 -DskipTests package` 成功生成后端 JAR。未执行 SQL、未改 Redis 地址/密码，未进入优惠券、WebSocket、缓存或报表任务。

@@ -24,11 +24,12 @@ import com.qinghe.life.mapper.CartMapper;
 import com.qinghe.life.mapper.GoodsMapper;
 import com.qinghe.life.mapper.OrderItemMapper;
 import com.qinghe.life.mapper.OrderMapper;
-import com.qinghe.life.mapper.OperateLogMapper;
 import com.qinghe.life.mapper.ShopMapper;
 import com.qinghe.life.mapper.UserAddressMapper;
 import com.qinghe.life.mapper.UserMapper;
+import com.qinghe.life.mapper.OperateLogMapper;
 import com.qinghe.life.service.OrderService;
+import com.qinghe.life.service.OrderTimeoutCancelService;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.utils.AdminContext;
 import com.qinghe.life.vo.AdminOrderVO;
@@ -66,6 +67,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final UserMapper userMapper;
+    private final OrderCancellationService orderCancellationService;
+    private final OrderTimeoutCancelService orderTimeoutCancelService;
     private final OperateLogMapper operateLogMapper;
 
     @Value("${order.payment-timeout-minutes:15}")
@@ -74,7 +77,8 @@ public class OrderServiceImpl implements OrderService {
     public OrderServiceImpl(CartMapper cartMapper, GoodsMapper goodsMapper, ShopMapper shopMapper,
                             UserAddressMapper userAddressMapper, CampusMapper campusMapper,
                             BuildingMapper buildingMapper, OrderMapper orderMapper, OrderItemMapper orderItemMapper,
-                            UserMapper userMapper, OperateLogMapper operateLogMapper) {
+                            UserMapper userMapper, OrderCancellationService orderCancellationService,
+                            OrderTimeoutCancelService orderTimeoutCancelService, OperateLogMapper operateLogMapper) {
         this.cartMapper = cartMapper;
         this.goodsMapper = goodsMapper;
         this.shopMapper = shopMapper;
@@ -84,6 +88,8 @@ public class OrderServiceImpl implements OrderService {
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
         this.userMapper = userMapper;
+        this.orderCancellationService = orderCancellationService;
+        this.orderTimeoutCancelService = orderTimeoutCancelService;
         this.operateLogMapper = operateLogMapper;
     }
 
@@ -233,6 +239,7 @@ public class OrderServiceImpl implements OrderService {
         }
         int updated = orderMapper.update(null, Wrappers.<Order>lambdaUpdate()
                 .eq(Order::getId, orderId).eq(Order::getUserId, userId).eq(Order::getStatus, OrderStatus.PENDING_PAY.getCode())
+                .ge(Order::getPayExpireTime, now)
                 .set(Order::getStatus, OrderStatus.PAID.getCode()).set(Order::getPayTime, now));
         if (updated != 1) {
             throw new BusinessException(409, "订单状态已变化，请刷新后重试");
@@ -243,14 +250,13 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void cancel(Long orderId) {
         Long userId = requireCurrentUserId();
         Order order = requireUserOrder(orderId, userId);
         if (!OrderStatus.PENDING_PAY.getCode().equals(order.getStatus())) {
             throw new BusinessException(409, "只有待支付订单可以取消");
         }
-        if (!cancelPendingOrder(orderId, userId, "USER_CANCEL", userId, "用户取消订单", "cancel")) {
+        if (!orderCancellationService.cancelByUser(orderId, userId)) {
             throw new BusinessException(409, "订单状态已变化，请刷新后重试");
         }
     }
@@ -293,48 +299,8 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public int cancelExpiredOrders() {
-        int cancelled = 0;
-        while (true) {
-            List<Order> expired = orderMapper.selectList(Wrappers.<Order>lambdaQuery()
-                    .eq(Order::getStatus, OrderStatus.PENDING_PAY.getCode())
-                    .le(Order::getPayExpireTime, LocalDateTime.now())
-                    .orderByAsc(Order::getPayExpireTime).orderByAsc(Order::getId).last("LIMIT 100"));
-            if (expired.isEmpty()) {
-                return cancelled;
-            }
-            for (Order order : expired) {
-                if (cancelPendingOrder(order.getId(), null, "PAYMENT_TIMEOUT", order.getUserId(), "订单支付超时取消", "cancelExpiredOrders")) {
-                    cancelled++;
-                }
-            }
-        }
-    }
-
-    private boolean cancelPendingOrder(Long orderId, Long expectedUserId, String reason, Long logActorId,
-                                       String action, String controllerMethod) {
-        LocalDateTime now = LocalDateTime.now();
-        int updated = orderMapper.update(null, Wrappers.<Order>lambdaUpdate()
-                .eq(Order::getId, orderId)
-                .eq(expectedUserId != null, Order::getUserId, expectedUserId)
-                .eq(Order::getStatus, OrderStatus.PENDING_PAY.getCode())
-                .set(Order::getStatus, OrderStatus.CANCELLED.getCode())
-                .set(Order::getCancelTime, now).set(Order::getCancelReason, reason));
-        if (updated != 1) {
-            return false;
-        }
-        List<OrderItem> items = orderItemMapper.selectByOrderIds(Collections.singletonList(orderId));
-        if (items.isEmpty()) {
-            throw new BusinessException(409, "订单明细不存在，取消已回滚");
-        }
-        for (OrderItem item : items) {
-            if (goodsMapper.restoreStockAfterOrderCancellation(item.getGoodsId(), item.getQuantity()) != 1) {
-                throw new BusinessException(409, "商品库存恢复失败，取消已回滚");
-            }
-        }
-        writeOperationLog(logActorId, action, orderId, "OrderService", controllerMethod);
-        return true;
+        return orderTimeoutCancelService.cancelExpiredOrders();
     }
 
     private AdminOrderVO transitionByAdmin(Long orderId, OrderStatus expected, OrderStatus target,

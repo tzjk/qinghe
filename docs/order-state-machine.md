@@ -2,7 +2,7 @@
 
 ## 当前边界
 
-当前真实订单接口只有 `POST /api/orders`，它创建普通订单并写入 `PENDING_PAY`。本轮不实现支付、用户取消、库存恢复、管理员接单、配送、完成、定时扫描、优惠券、Redis Stream、WebSocket、报表或订单页面。
+当前订单链路已包含创建、查询、模拟支付、用户取消、管理员固定流转和超时取消。订单创建写入 `PENDING_PAY`；本轮不实现优惠券、Redis Stream、WebSocket、缓存、报表、真实支付或骑手系统。
 
 `qh_order.status` 保持 `VARCHAR(20)`；数据库中的既有 `PENDING_PAY` 是唯一待支付编码，严禁另行引入 `PENDING_PAYMENT`。
 
@@ -59,4 +59,6 @@ SHOW INDEX FROM qh_order;
 - 新订单状态为 `PENDING_PAY`，服务端写入 `create_time` 和默认 15 分钟 `pay_expire_time`。支付成功仅能由 `PENDING_PAY` 条件更新为 `PAID` 并写 `pay_time`。
 - 用户取消和超时取消均为 `PENDING_PAY -> CANCELLED`。只有状态条件更新受影响行数为 1 的事务才能按 `qh_order_item` 恢复对应商品库存并直接写入一条现有 `qh_operate_log` 成功记录；重复取消或多次扫描不会重复恢复。
 - 管理员固定流转为 `PAID -> ACCEPTED -> DELIVERING -> COMPLETED`，每一步以预期状态条件更新并写对应时间与一条操作日志。普通用户令牌不能进入 `/api/admin/**`。
-- Spring Task 每分钟调用可直接测试的批处理服务，按 100 条一批扫描超时待支付订单；未引入普通 JVM 锁或额外大型分布式锁依赖。
+- Spring Task 只获取 `qh:lock:order:timeout-cancel` 后调用可直接测试的批处理服务。Redisson 客户端复用既有 `spring.redis` host、port、password 和 database；锁使用配置化 `tryLock(waitTime, leaseTime, SECONDS)`，未获锁或锁异常直接结束本轮。
+- 扫描条件固定为 `status = PENDING_PAY AND pay_expire_time <= 当前时间`，默认每批 100 条。每笔取消通过独立 Spring 事务 Service 执行 `id + PENDING_PAY + pay_expire_time <= 当前时间` 条件更新；更新成功后才恢复订单明细对应库存并写一条统一操作日志。支付更新同时要求仍未过期，因此支付与超时取消并发只会有一个状态变更成功。
+- 任一订单的状态、库存或直接日志写入失败均回滚该订单事务；订单/明细保留，购物车不恢复。重复扫描只会得到 0 行条件更新，不能重复恢复库存。

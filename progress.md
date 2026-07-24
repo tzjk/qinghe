@@ -1,5 +1,13 @@
 # 活动进度
 
+## 2026-07-24 订单超时取消与多实例任务锁：实施中
+
+- 已按本轮唯一开始检查确认 `feature/order-timeout-lock` 与干净工作区；未 fetch、pull、reset、rebase、clean 或执行 SQL。
+- 静态门禁已核对 `Order` 映射的 `payExpireTime`、`cancelTime`、`cancelReason`、`status`，以及候选迁移中的 `(status, pay_expire_time)`；实际结构仍以用户手工迁移/测试运行结果为准。
+- 已抽出 `OrderCancellationService`，用户取消与超时取消共享订单明细库存恢复及直接 `qh_operate_log` 写入；超时扫描服务不持有事务，而每笔 `cancelExpiredOrder` 由独立 Spring Bean 的 `REQUIRED` 事务执行。
+- 已增加配置化 Spring Task 和基于既有 `spring.redis` 配置的 Redisson 客户端。调度器只获取 `qh:lock:order:timeout-cancel`、触发扫描、并在当前线程持锁时释放；锁或 Redis 异常结束本轮，不会无锁扫描。
+- 指定 Maven 专项测试实际为 20 tests / 0 failures / 0 errors / 0 skipped，其中 `OrderTimeoutCancelIntegrationTest` 为 7/0/0/0，真实 Redis 与 Redisson 锁场景均通过。随后 `mvn -Dmaven.repo.local=Q:/.m2 -DskipTests package` 成功，编译 216 个主源码、26 个测试源码并生成 JAR。
+
 ## 2026-07-19 学籍异动、批量毕业与二维码批量管理：实施启动
 
 - 用户已授权从已完成的 `docs/academic-dorm-batch-audit.md` 实施本轮唯一里程碑；已重新读取 AGENTS、项目规格/总计划、审计、交接、现有计划/进度/发现、宿舍资产计划以及数据库、接口和页面设计。

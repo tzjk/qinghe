@@ -39,6 +39,12 @@ qinghe:
 
 order:
   payment-timeout-minutes: 15
+  timeout:
+    enabled: true
+    cron: "0 * * * * ?"
+    batch-size: 100
+    lock-wait-seconds: 0
+    lock-lease-seconds: 55
 
 aliyun:
   oss:

@@ -1,3 +1,30 @@
+# 订单超时取消与多实例任务锁（2026-07-24）
+
+**本轮唯一里程碑：** 在既有订单生命周期基础上，实现由 Spring Task 触发、Redisson 多实例锁保护的超时未支付订单取消；条件更新、精确库存恢复与统一 `qh_operate_log` 必须在每笔订单的同一 `REQUIRED` 事务中完成。只覆盖订单专项测试、指定文档与 Git 收口；不实现优惠券、Redis Stream、WebSocket、缓存、报表或外卖员系统，也不执行 SQL。
+
+| 阶段 | 状态 | 交付与判定 |
+|---|---|---|
+| 1. 基线、规划与结构门禁 | completed | 已确认分支 `feature/order-timeout-lock`、工作区干净；实体/迁移已覆盖所需字段，索引由未执行候选迁移准备，未执行 SQL。 |
+| 2. 超时取消事务与并发契约 | completed | 条件更新、精确库存恢复、直接统一日志与逐笔代理事务已由订单专项验证；支付与超时取消竞争只允许一个更新成功。 |
+| 3. 调度器、Redisson 锁与配置 | completed | 默认每分钟的配置化任务、复用 `spring.redis` 的最小 Redisson 客户端、有限等待/租约与异常结束策略已由真实 Redis 锁测试验证。 |
+| 4. 订单专项集成测试 | completed | `OrderCreateIntegrationTest,OrderLifecycleIntegrationTest,OrderTimeoutCancelIntegrationTest` 合计 20/0/0/0；新增超时专项 7/0/0/0。 |
+| 5. 指定文档、打包与 Git 收口 | in_progress | 已完成指定文档与 `-DskipTests package` 成功；仅剩用户授权的单次 Git 审计、提交和 push。 |
+
+### 本轮不可变约束
+
+- 待支付状态固定为 `PENDING_PAY`；`total_amount` 是商品原始总额、`pay_amount` 是实际应付金额，不新增 `goods_amount`。
+- 超时查询仅为 `status = PENDING_PAY AND pay_expire_time <= now`，以可配置批量（默认 100）逐批获取；每笔订单独立事务。
+- 最终正确性依赖 `id + PENDING_PAY + pay_expire_time <= now` 条件更新；锁仅避免多实例重复调度，不能替代数据库并发控制。
+- 失败必须整体回滚当前订单的状态、库存与操作日志；保留订单/明细，不恢复购物车，不创建订单日志表。
+- 不执行迁移 SQL；若测试表结构缺列或索引，停止受影响测试并报告 `backend/src/main/resources/sql/order_lifecycle_schema_increment.sql`。
+
+### 本轮错误记录
+
+| 问题 | 尝试 | 处理 |
+|---|---:|---|
+| 初次向 `findings.md` 的无上下文补丁未匹配。 | 1 | 未修改文件；已读取文件头并改用精确锚点写入静态门禁结论。 |
+| 静态依赖缓存探测未找到预置 Redisson 目录。 | 1 | 将由 Maven 在用户指定的本地仓库解析；不改 Redis 地址、密码或使用 Mock 锁。 |
+
 # 订单生命周期核心闭环（2026-07-24）
 
 **本轮唯一里程碑：** 在既有普通订单创建事务之上完成支付期限、用户查询/模拟支付/取消及库存恢复、管理员状态流转、超时取消、对应页面与专项测试；不实现优惠券、Redis Stream、WebSocket、缓存、营业报表、真实支付、骑手或配送轨迹。SQL 迁移不由应用执行。
