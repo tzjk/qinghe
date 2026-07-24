@@ -585,3 +585,9 @@ ORDER BY table_name, constraint_name;
 - 公开店铺详情、商品详情和指定店铺上架商品列表共用 `CatalogCache`：显式空值标记、JSON 坏值删除、配置化基础 TTL+抖动、有限 Redisson 业务 Key 锁和 Redis/锁异常 MySQL 降级均集中实现。商品库存与销量不作为缓存权威数据，响应时仍从 MySQL 读取。
 - 店铺、商品的管理员写入均在事务提交成功后精确失效。店铺失效同时覆盖本店详情、商品列表和本店商品详情；商品新增/修改/上下架/库存或主图修改删除商品详情和所属店铺列表，商品换店同时删除新旧店铺列表。失败仅记录日志。
 - 验证：`CatalogCacheIntegrationTest,AdminShopIntegrationTest,AdminGoodsIntegrationTest,ShopCoverServiceTest,GoodsImageServiceTest` 共 12/0/0/0；`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功生成后端 JAR。未执行 SQL、前端构建或范围外测试。
+## 2026-07-24 订单 WebSocket 通知里程碑：完成并验证
+
+- 已完成用户/管理员订单 WebSocket 通知：固定路径 `/ws/orders/user`、`/ws/orders/admin` 在握手时通过 `Sec-WebSocket-Protocol` 复用 Redis 登录会话；不在 URL/日志中暴露 Token，不接受客户端 userId 订阅。
+- 订单创建、支付、两类取消和管理员接单/配送/完成均通过统一订单事件在 `AFTER_COMMIT` 发送。会话发送失败不会回滚订单；每用户多 Session、异常清理、前端最多 5 次递增退避重连、登出/页面卸载关闭、消息去重与旧状态保护已实现。
+- 验证：`OrderWebSocketIntegrationTest` 16/0/0/0，合并 `OrderLifecycleIntegrationTest` 和 `OrderTimeoutCancelIntegrationTest` 为 31/0/0/0；后端 `-DskipTests package` 成功，前端 Vite build 成功。前端保留第三方 PURE 注释和 bundle 体积非阻断警告。
+- 单实例只向本机 Session 广播；多实例需要 Redis Pub/Sub 或消息代理，且离线消息持久化/补偿不在本里程碑范围内。

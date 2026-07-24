@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { getAdminMe } from '../api/admin-auth'
 import { clearAdminSession, getAdminToken, getStoredAdmin, setAdminToken, setStoredAdmin } from '../utils/admin-session'
+import { disconnectOrderWebSocket } from '../utils/order-websocket'
 
 export const useAdminStore = defineStore('admin', {
   state: () => ({ token: getAdminToken(), profile: getStoredAdmin() }),
@@ -8,7 +9,7 @@ export const useAdminStore = defineStore('admin', {
   actions: {
     setLogin(token, profile) { this.token = token; this.profile = profile; setAdminToken(token); setStoredAdmin(profile) },
     setProfile(profile) { this.profile = profile; setStoredAdmin(profile) },
-    clearLogin() { this.token = ''; this.profile = null; clearAdminSession() },
+    clearLogin() { disconnectOrderWebSocket('admin'); this.token = ''; this.profile = null; clearAdminSession() },
     async restoreSession() { if (!this.token) return; try { this.setProfile(await getAdminMe()) } catch { this.clearLogin() } }
   }
 })

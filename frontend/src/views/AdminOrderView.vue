@@ -1,17 +1,34 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { acceptAdminOrder, completeAdminOrder, deliverAdminOrder, getAdminOrderDetail, getAdminOrders } from '../api/admin-order'
+import { connectOrderWebSocket } from '../utils/order-websocket'
 
 const loading = ref(false); const detailVisible = ref(false); const detail = ref(null); const operating = ref(null)
 const query = reactive({ page: 1, size: 10, keyword: '', status: '' }); const result = reactive({ records: [], total: 0 })
 const statuses = [['', '全部状态'], ['PENDING_PAY', '待支付'], ['PAID', '已支付'], ['ACCEPTED', '已接单'], ['DELIVERING', '配送中'], ['COMPLETED', '已完成'], ['CANCELLED', '已取消']]
 const money = (value) => Number(value || 0).toFixed(2)
+const statusRank = { PENDING_PAY: 10, PAID: 20, ACCEPTED: 30, DELIVERING: 40, COMPLETED: 50, CANCELLED: 60 }
+let closeWebSocket = () => {}
 async function load() { loading.value = true; try { const page = await getAdminOrders({ ...query, keyword: query.keyword || undefined, status: query.status || undefined }); result.records = page.records || []; result.total = page.total || 0 } catch (error) { ElMessage.error(error.message || '订单列表加载失败') } finally { loading.value = false } }
 function search() { query.page = 1; load() }
 async function showDetail(row) { detailVisible.value = true; try { detail.value = await getAdminOrderDetail(row.orderId) } catch (error) { ElMessage.error(error.message || '订单详情加载失败') } }
 async function operate(row, type) { const labels = { accept: '接单', deliver: '开始配送', complete: '完成订单' }; const calls = { accept: acceptAdminOrder, deliver: deliverAdminOrder, complete: completeAdminOrder }; try { await ElMessageBox.confirm(`确认${labels[type]}订单 ${row.orderNo} 吗？`, '订单状态变更', { type: 'warning' }); operating.value = row.orderId; await calls[type](row.orderId); ElMessage.success(`${labels[type]}成功`); await load(); if (detail.value?.orderId === row.orderId) detail.value = await getAdminOrderDetail(row.orderId) } catch (error) { if (error !== 'cancel') ElMessage.error(error.message || '订单操作失败') } finally { operating.value = null } }
-onMounted(load)
+function applyAdminMessage(message) {
+  const row = result.records.find(item => item.orderId === message.orderId)
+  if (row && (statusRank[message.orderStatus] || 0) >= (statusRank[row.status] || 0)) {
+    row.status = message.orderStatus
+    row.statusName = message.statusText
+  }
+  if (detail.value?.orderId === message.orderId && (statusRank[message.orderStatus] || 0) >= (statusRank[detail.value.status] || 0)) {
+    detail.value.status = message.orderStatus
+    detail.value.statusName = message.statusText
+  }
+  ElMessage.info(message.summary)
+  load()
+}
+onMounted(() => { load(); closeWebSocket = connectOrderWebSocket('admin', applyAdminMessage) })
+onBeforeUnmount(() => closeWebSocket())
 </script>
 
 <template>

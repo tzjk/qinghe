@@ -2,7 +2,7 @@
 
 ## 当前边界
 
-当前订单链路已包含创建、查询、模拟支付、用户取消、管理员固定流转和超时取消。订单创建写入 `PENDING_PAY`；本轮不实现优惠券、Redis Stream、WebSocket、缓存、报表、真实支付或骑手系统。
+当前订单链路已包含创建、查询、模拟支付、用户取消、管理员固定流转、超时取消和 WebSocket 状态变化提醒。订单创建写入 `PENDING_PAY`；通知不改变订单状态机、数据库结构或订单事务事实来源。
 
 `qh_order.status` 保持 `VARCHAR(20)`；数据库中的既有 `PENDING_PAY` 是唯一待支付编码，严禁另行引入 `PENDING_PAYMENT`。
 
@@ -62,3 +62,10 @@ SHOW INDEX FROM qh_order;
 - Spring Task 只获取 `qh:lock:order:timeout-cancel` 后调用可直接测试的批处理服务。Redisson 客户端复用既有 `spring.redis` host、port、password 和 database；锁使用配置化 `tryLock(waitTime, leaseTime, SECONDS)`，未获锁或锁异常直接结束本轮。
 - 扫描条件固定为 `status = PENDING_PAY AND pay_expire_time <= 当前时间`，默认每批 100 条。每笔取消通过独立 Spring 事务 Service 执行 `id + PENDING_PAY + pay_expire_time <= 当前时间` 条件更新；更新成功后才恢复订单明细对应库存并写一条统一操作日志。支付更新同时要求仍未过期，因此支付与超时取消并发只会有一个状态变更成功。
 - 任一订单的状态、库存或直接日志写入失败均回滚该订单事务；订单/明细保留，购物车不恢复。重复扫描只会得到 0 行条件更新，不能重复恢复库存。
+
+## WebSocket 通知边界（2026-07-24）
+
+- 订单创建、支付、用户取消、超时取消及三个管理员状态流转在成功写入后发布订单事件；`@TransactionalEventListener(AFTER_COMMIT)` 统一发送，回滚事务不会发送。发送失败只记录不含 Token 的简要日志并清理失效 Session，不回滚订单事务。
+- 用户通道为 `/ws/orders/user`，管理员通道为 `/ws/orders/admin`。浏览器 WebSocket 通过 `Sec-WebSocket-Protocol` 传递现有 Bearer 会话的值，服务端在握手时查询现有 Redis 用户/管理员会话并把身份写入 Session 属性。客户端不能传入任意 `userId` 订阅他人订单。
+- 消息仅含 `messageType`、`orderId`、`orderNo`、`orderStatus`、`statusText`、`occurredAt`、`summary`。前端按订单 ID 和状态顺序做幂等更新，旧状态消息不能覆盖 HTTP 已返回的新状态；重连后仍调用 HTTP 订单查询。
+- 单实例使用线程安全的多 Session 容器，同一用户的所有连接均会接收本人通知，管理员连接接收管理员广播。多实例部署需要 Redis Pub/Sub 或消息代理将本实例提交后的事件转发到其他实例；本轮不实现跨实例广播、离线消息持久化或补偿。
