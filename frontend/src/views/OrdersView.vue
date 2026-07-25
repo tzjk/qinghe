@@ -1,20 +1,36 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { cancelOrder, getOrderDetail, getOrders, simulateOrderPayment } from '../api/order'
 import PageHeader from '../components/PageHeader.vue'
+import { connectOrderWebSocket } from '../utils/order-websocket'
 
 const loading = ref(false); const detailVisible = ref(false); const detailLoading = ref(false); const operating = ref(null)
 const query = reactive({ page: 1, size: 10, status: '' }); const result = reactive({ records: [], total: 0 }); const detail = ref(null)
 const statusOptions = [['', '全部状态'], ['PENDING_PAY', '待支付'], ['PAID', '已支付'], ['ACCEPTED', '已接单'], ['DELIVERING', '配送中'], ['COMPLETED', '已完成'], ['CANCELLED', '已取消']]
 const money = (value) => Number(value || 0).toFixed(2)
+const statusRank = { PENDING_PAY: 10, PAID: 20, ACCEPTED: 30, DELIVERING: 40, COMPLETED: 50, CANCELLED: 60 }
+let closeWebSocket = () => {}
 
 async function load() { loading.value = true; try { const page = await getOrders({ ...query, status: query.status || undefined }); result.records = page.records || []; result.total = page.total || 0 } catch (error) { ElMessage.error(error.message || '订单列表加载失败') } finally { loading.value = false } }
 function search() { query.page = 1; load() }
 async function openDetail(row) { detailVisible.value = true; detailLoading.value = true; detail.value = null; try { detail.value = await getOrderDetail(row.orderId) } catch (error) { ElMessage.error(error.message || '订单详情加载失败') } finally { detailLoading.value = false } }
 async function pay(row) { try { await ElMessageBox.confirm(`确认以订单实付金额 ¥${money(row.payAmount)} 完成模拟支付吗？`, '模拟支付确认', { type: 'warning', confirmButtonText: '确认支付' }); operating.value = row.orderId; await simulateOrderPayment(row.orderId); ElMessage.success('模拟支付成功'); await load(); if (detail.value?.orderId === row.orderId) detail.value = await getOrderDetail(row.orderId) } catch (error) { if (error !== 'cancel') ElMessage.error(error.message || '模拟支付失败') } finally { operating.value = null } }
 async function cancel(row) { try { await ElMessageBox.confirm('确认取消该待支付订单吗？已占用的商品库存将由服务端恢复，购物车不会恢复。', '取消订单', { type: 'warning', confirmButtonText: '确认取消' }); operating.value = row.orderId; await cancelOrder(row.orderId); ElMessage.success('订单已取消'); await load(); if (detail.value?.orderId === row.orderId) detail.value = await getOrderDetail(row.orderId) } catch (error) { if (error !== 'cancel') ElMessage.error(error.message || '取消订单失败') } finally { operating.value = null } }
-onMounted(load)
+function applyOrderMessage(message) {
+  const row = result.records.find(item => item.orderId === message.orderId)
+  if (!row) { if (!query.status || query.status === message.orderStatus) load(); ElMessage.info(message.summary); return }
+  if ((statusRank[message.orderStatus] || 0) < (statusRank[row.status] || 0)) return
+  row.status = message.orderStatus
+  row.statusName = message.statusText
+  if (detail.value?.orderId === message.orderId && (statusRank[message.orderStatus] || 0) >= (statusRank[detail.value.status] || 0)) {
+    detail.value.status = message.orderStatus
+    detail.value.statusName = message.statusText
+  }
+  ElMessage.info(message.summary)
+}
+onMounted(() => { load(); closeWebSocket = connectOrderWebSocket('user', applyOrderMessage) })
+onBeforeUnmount(() => closeWebSocket())
 </script>
 
 <template>

@@ -624,3 +624,13 @@
 - 统一目录缓存组件、Key、TTL、空值、互斥重建、坏值删除、MySQL 降级和事务提交后失效已完成；库存和销量保持实时 MySQL 回源。
 - 首次专项测试为 12/1/0：不存在商品未写空值缓存。修复加载器返回 null 后，同一聚焦命令通过 12/0/0/0。
 - `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，生成后端 JAR；未运行前端或范围外测试。
+# 2026-07-24 — Order WebSocket notification milestone
+
+- Initial Git check (performed once as requested): current branch is `feature/order-websocket-notify`; worktree was clean.
+- Started a single WebSocket notification milestone plan. No implementation or Git write has occurred yet.
+- Inspected only the permitted order, authentication/context, Redis, Axios token, and user/admin order page code. Confirmed the post-commit event is the minimal backend integration point.
+- Added backend WebSocket implementation, frontend lifecycle support, and the focused test class. First requested Maven test attempt downloaded the new Spring WebSocket dependency and compiled main sources, then stopped at two incorrect test mock imports; corrected the imports before retrying.
+- Second focused Maven attempt compiled main code and exposed only test-helper type mismatches. The test now uses servlet handshake mocks and the production WebSocket message VO.
+- Third focused Maven attempt passed: 31 tests, 0 failures, 0 errors, 0 skipped; `OrderWebSocketIntegrationTest` contributed 16 passing scenarios.
+- Requested backend `-DskipTests package` passed. The first frontend build stopped at sandboxed esbuild file reads; the controlled real-path retry passed (1742 modules) with only non-blocking third-party PURE-comment and bundle-size warnings.
+- Updated only the requested API/order-design/handoff documentation plus planning records. Pending final Git diff audit, one commit, and one normal push.

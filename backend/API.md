@@ -280,6 +280,18 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 - 新订单由服务端写入 `createTime` 与默认 15 分钟 `payExpireTime`；客户端不能提交用户、状态、金额或时间字段。
 - 支付条件更新同时要求 `pay_expire_time >= 当前服务端时间`。超时取消条件为 `id + PENDING_PAY + pay_expire_time <= 当前服务端时间`；只有更新成功才在同一 `REQUIRED` 事务恢复订单明细对应库存并写一条 `qh_operate_log`。支付与取消竞争时仅允许一个状态更新成功。
 - 超时任务由 `order.timeout.enabled`、`cron`、`batch-size`、`lock-wait-seconds`、`lock-lease-seconds` 配置。默认每分钟按 100 条扫描；Redisson 使用现有 `spring.redis` 连接获取 `qh:lock:order:timeout-cancel`，未获锁或 Redis/锁异常即结束本轮，数据库条件更新仍为最终正确性保障。
+
+## 2026-07-24 订单 WebSocket 实时通知
+
+| 通道 | 路径 | 身份 | 握手约束 |
+|---|---|---|---|
+| 用户订单通知 | `/ws/orders/user` | 当前用户 | `Sec-WebSocket-Protocol` 携带 `qh-user.{token}`；服务端只从 Redis 会话取得用户 ID，不接受订阅 userId。 |
+| 管理员订单通知 | `/ws/orders/admin` | 当前管理员 | `Sec-WebSocket-Protocol` 携带 `qh-admin.{token}`；仅 Redis 管理员会话可建立。 |
+
+- Token 不进入 URL、响应体或日志。无 Token、无效 Token、角色不匹配及已失效会话均拒绝握手；同一用户的多标签页/设备可同时连接。
+- 每帧均为专用安全消息对象，不发送完整 `Order` 实体：`messageType`、`orderId`、`orderNo`、`orderStatus`、`statusText`、`occurredAt`、`summary`。
+- 用户消息类型：`ORDER_CREATED`、`ORDER_PAID`、`ORDER_CANCELLED`、`ORDER_TIMEOUT_CANCELLED`、`ORDER_ACCEPTED`、`ORDER_DELIVERING`、`ORDER_COMPLETED`。管理员消息类型：`ADMIN_NEW_ORDER`、`ADMIN_ORDER_CANCELLED`、`ADMIN_ORDER_STATUS_CHANGED`。
+- WebSocket 只作状态变化提醒。首次加载、重连或漏消息后，客户端必须通过既有 HTTP 订单接口获取真实状态。
 # 2026-07-24 普通优惠券与订单使用接口
 
 所有金额由服务端以 `BigDecimal` 计算并按统一两位小数规则返回；创建订单请求只允许新增 `userCouponId`，不接受 `discountAmount`、`payAmount`、`discountRate`、`couponStatus` 或 `userId`。

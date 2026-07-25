@@ -17,6 +17,7 @@ import com.qinghe.life.entity.UserAddress;
 import com.qinghe.life.entity.User;
 import com.qinghe.life.entity.OperateLog;
 import com.qinghe.life.enums.OrderStatus;
+import com.qinghe.life.enums.OrderNotificationReason;
 import com.qinghe.life.exception.BusinessException;
 import com.qinghe.life.mapper.CampusMapper;
 import com.qinghe.life.mapper.BuildingMapper;
@@ -31,6 +32,7 @@ import com.qinghe.life.mapper.OperateLogMapper;
 import com.qinghe.life.service.OrderService;
 import com.qinghe.life.service.CouponService;
 import com.qinghe.life.service.OrderTimeoutCancelService;
+import com.qinghe.life.service.OrderNotificationPublisher;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.utils.AdminContext;
 import com.qinghe.life.vo.AdminOrderVO;
@@ -72,6 +74,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderTimeoutCancelService orderTimeoutCancelService;
     private final CouponService couponService;
     private final OperateLogMapper operateLogMapper;
+    private final OrderNotificationPublisher orderNotificationPublisher;
 
     @Value("${order.payment-timeout-minutes:15}")
     private long paymentTimeoutMinutes;
@@ -81,7 +84,7 @@ public class OrderServiceImpl implements OrderService {
                             BuildingMapper buildingMapper, OrderMapper orderMapper, OrderItemMapper orderItemMapper,
                             UserMapper userMapper, OrderCancellationService orderCancellationService,
                             OrderTimeoutCancelService orderTimeoutCancelService, CouponService couponService,
-                            OperateLogMapper operateLogMapper) {
+                            OperateLogMapper operateLogMapper, OrderNotificationPublisher orderNotificationPublisher) {
         this.cartMapper = cartMapper;
         this.goodsMapper = goodsMapper;
         this.shopMapper = shopMapper;
@@ -95,6 +98,7 @@ public class OrderServiceImpl implements OrderService {
         this.orderTimeoutCancelService = orderTimeoutCancelService;
         this.couponService = couponService;
         this.operateLogMapper = operateLogMapper;
+        this.orderNotificationPublisher = orderNotificationPublisher;
     }
 
     @Override
@@ -215,6 +219,7 @@ public class OrderServiceImpl implements OrderService {
                 throw new BusinessException(409, "购物车状态已变化，请重新结算");
             }
         }
+        orderNotificationPublisher.publishAfterCommit(order, OrderNotificationReason.CREATED);
         return toView(order, shop.getName());
     }
 
@@ -256,6 +261,7 @@ public class OrderServiceImpl implements OrderService {
         couponService.redeemForOrder(orderId, now);
         Order paid = orderMapper.selectById(orderId);
         writeOperationLog(userId, "用户模拟支付订单", orderId, "OrderService", "simulatePay");
+        orderNotificationPublisher.publishAfterCommit(paid, OrderNotificationReason.PAID);
         return userViews(Collections.singletonList(paid), true).get(0);
     }
 
@@ -332,7 +338,17 @@ public class OrderServiceImpl implements OrderService {
         }
         Order changed = orderMapper.selectById(orderId);
         writeOperationLog(adminId, action, orderId, "AdminOrderController", controllerMethod);
+        orderNotificationPublisher.publishAfterCommit(changed, notificationReason(target));
         return adminViews(Collections.singletonList(changed), true).get(0);
+    }
+
+    private OrderNotificationReason notificationReason(OrderStatus status) {
+        switch (status) {
+            case ACCEPTED: return OrderNotificationReason.ACCEPTED;
+            case DELIVERING: return OrderNotificationReason.DELIVERING;
+            case COMPLETED: return OrderNotificationReason.COMPLETED;
+            default: throw new IllegalArgumentException("Unsupported notification status");
+        }
     }
 
     private List<OrderVO> userViews(List<Order> orders, boolean detail) {
