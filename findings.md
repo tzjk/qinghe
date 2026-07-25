@@ -1,5 +1,18 @@
 # 活动发现
 
+## 2026-07-25 管理员营业报表：启动基线
+
+- 分支与工作区已按本轮用户要求一次性核对：`feature/business-report`、干净。后续 Git 命令仅保留给最终收口步骤。
+- 统计口径已经在 `task_plan.md` 固化：有效营业状态为 `PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`；金额语义为 `total_amount` 原价、`pay_amount` 实付，优惠为两者之差；使用 `Asia/Shanghai` 的左闭右开自然日边界。
+- 日报方案尚未决定；先审计现有字段、索引和规模证据，默认候选为 Mapper 层 MySQL 实时聚合，不新增快照表或缓存。
+
+## 2026-07-25 管理员营业报表：结论
+
+- 选择实时 MySQL 聚合：报表是限定 90 天的读操作，已有订单明细、店铺和商品关联字段足以完成 `SUM/COUNT/GROUP BY`；当前没有需要日报快照或缓存的规模/性能证据。
+- 严格 MySQL `only_full_group_by` 要求趋势 SELECT、GROUP BY、ORDER BY 使用同一 `DATE_FORMAT(create_time, '%Y-%m-%d')` 表达式/别名；最终 SQL 已兼容并经专项集成测试验证。
+- 有效营业状态固定为 `PAID/ACCEPTED/DELIVERING/COMPLETED`。店铺销售额为订单 `pay_amount` 合计，商品销售额为订单明细 `subtotal` 合计；优惠额固定按需求使用 `total_amount - pay_amount`。趋势空日期由 Service 补零。
+- 现有设计登记 `qh_order_item.order_id`、商品和店铺关联索引；日期状态聚合与用户券订单核销查询的候选人工索引记录在 `docs/business-report-design.md`。未生成/执行 SQL，实际建索引前须先核对等价索引和 `EXPLAIN`。
+
 ## 2026-07-24 优惠券基础业务与普通订单使用：实施/验证阻断
 
 - 已生成未执行候选 `backend/src/main/resources/sql/coupon_foundation_increment.sql` 并将领域模型切换为本轮字段与集中状态枚举；脚本保留旧字段和 `(user_id,coupon_id)` 唯一索引，未删除/重命名列或自动导入 SQL。

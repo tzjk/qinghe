@@ -568,6 +568,14 @@ ORDER BY table_name, constraint_name;
 - Pending 恢复以 `XPENDING`/`XCLAIM` 执行；失败消息保留 Pending，达到配置重试上限后记录精简失败原因并 ACK。Redisson 锁只保护跨实例的恢复调度。
 - 已验证：`CouponOrderIntegrationTest` 22 项、`CouponSeckillStreamIntegrationTest` 7 项，合计 29/0/0/0；后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，JAR 已生成。未运行 SQL、前端构建、商品缓存、WebSocket 或营业报表任务。
 
+## 2026-07-25 管理员营业报表：已完成
+
+- 新增管理员报表接口：概览、日期趋势、店铺/商品排行和优惠券使用统计；全部复用 `/api/admin/**` 管理员认证，不接受 `adminId`。
+- 采用 MySQL 实时 `SUM/COUNT/GROUP BY` 聚合，统一 `Asia/Shanghai` 日期边界，默认 7 天、最大 90 天、排行上限 50；趋势由服务端补零，金额均为 `BigDecimal`。未新增日报快照、定时任务、缓存或 SQL 脚本。
+- 新增 `AdminBusinessReportView`、管理端路由和菜单；原生 SVG 营业额趋势图及 Element Plus 表格只展示服务端统计数据，未引入图表依赖。
+- 验证：`BusinessReportIntegrationTest` 为 3/0/0/0；后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功；前端 `D:/develop/NodeJS/npm.cmd run build` 成功（1745 modules）。前端仅有第三方 PURE 注释和大 chunk 非阻断警告。
+- 后续若数据规模增长，先核对索引与 `EXPLAIN`；候选人工索引说明位于 `docs/business-report-design.md`，本轮未执行 SQL。
+
 - 已新增普通券领域模型、管理员/用户端 API、领取条件更新、订单锁定/支付核销/取消释放、用户与管理员页面，以及候选人工迁移 `backend/src/main/resources/sql/coupon_foundation_increment.sql`。不含任何秒杀、Lua、Redis Stream、WebSocket、商品缓存或报表代码。
 - 真实 `qh_coupon/qh_user_coupon` 仍是旧结构，缺少本轮字段；候选 SQL 未执行。手工审核并执行后，先重跑本轮指定四类 Maven 专项测试，再进行跳过测试打包和前端构建。
 - 本轮指定 Maven 命令已仅执行一次，因 `Q:\.m2` Access is denied 在 Maven 启动阶段失败，未到编译/Surefire；后端打包按“专项通过后”规则未运行。前端 `npm run build` 已执行一次，受 esbuild 读取工作区上级目录限制而无法加载 `vite.config.js`，未生成构建结论。
