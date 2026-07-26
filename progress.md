@@ -647,3 +647,15 @@
 - Third focused Maven attempt passed: 31 tests, 0 failures, 0 errors, 0 skipped; `OrderWebSocketIntegrationTest` contributed 16 passing scenarios.
 - Requested backend `-DskipTests package` passed. The first frontend build stopped at sandboxed esbuild file reads; the controlled real-path retry passed (1742 modules) with only non-blocking third-party PURE-comment and bundle-size warnings.
 - Updated only the requested API/order-design/handoff documentation plus planning records. Pending final Git diff audit, one commit, and one normal push.
+
+## 2026-07-26 V1.0 release closure
+
+- Restored AGENTS.md, project specification, plan, progress, findings, and release handoff context. The user-authorized initial Git check was executed once: `chore/release-v1.0` with a clean worktree.
+- Created the release-closure plan in `task_plan.md`. Full backend regression is now in progress; no service, SQL, or Redis data operation has been performed.
+
+- First specified Maven attempt stopped during compilation because the sandbox could not read the existing `jackson-datatype-jsr310` JAR. The one controlled identical real-path retry compiled and ran 147 tests, reporting `1 failure / 0 errors / 0 skipped`.
+- The only failure was `DormAssetIntegrationTest`: its repeated-room assertion expected HTTP 409 while the established `BusinessException` transport contract returns HTTP 200 with body `code=409`. The test now asserts that contract and additionally asserts that exactly one `(building_id, room_no)` record exists; no production business logic, database data, Redis data, or schema was changed.
+- Two diagnostic-command issues were recorded: a source/target `rg` command referenced `docs` from the backend directory, and a first PowerShell regex command had quote parsing errors. Neither changed project files or runtime state.
+
+- Full regression after the duplicate-room/bed fixes passed: `147 tests / 0 failures / 0 errors / 0 skipped`. Backend `-DskipTests package` and frontend production build also passed; Vite reported only third-party PURE-comment and large-chunk warnings.
+- Security closure removed non-empty MySQL and Redis password defaults from `application.yml`. The required post-change full regression then failed with `125 errors`: Redis replied `NOAUTH Authentication required` because this process has no `REDIS_PASSWORD`. Per release constraints, no system environment variable was changed and no password was restored to source. Release verification, package-after-security-change, Git diff/commit, and push are blocked pending secure credential injection.

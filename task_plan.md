@@ -1066,3 +1066,22 @@
 | 2. Apply minimal compatible group creation | completed | `CouponSeckillServiceImpl` compiles with `xGroupCreate(stream, group, ReadOffset.from("0-0"), true)`, configured `stream-key`/group values, and narrow `BUSYGROUP` recognition. |
 | 3. Focused real Redis validation | blocked | The exact command reached test compilation but every integration test failed to resolve `com.qinghe.life.*` main packages, despite `mvn -DskipTests compile` and `javap` confirming the main artifacts exist. This is outside the allowed seckill-code repair boundary. |
 | 4. Package and authorized Git handoff | blocked | Per requested sequence, package, diff checks, commit, and the one normal push remain deferred until the focused test succeeds. |
+
+# 2026-07-26 V1.0 release closure
+
+**Scope:** project-level verification, release documentation, deployment instructions, presentation material, and only demonstrated defect fixes on `chore/release-v1.0`. No new business domain, automatic SQL execution, service control, or broad refactor.
+
+| Phase | Status | Exit condition |
+|---|---|---|
+| 1. Release baseline and persistent plan | completed | Branch and clean worktree were checked once; required project records were restored. |
+| 2. Backend full regression and package | in_progress | Full Maven test has 0 failures and 0 errors; package succeeds after it. |
+| 3. Frontend production build | pending | Requested Vite build completes; warnings are classified. |
+| 4. Read-only DB, Redis, permission, and secret audits | pending | Source and live-schema evidence is recorded; any gap yields only candidate manual SQL or a narrowly scoped fix. |
+| 5. Release documentation and manual acceptance checklist | pending | README, API, handoff, database/deployment, acceptance, and presentation material are current and credential-safe. |
+| 6. Final diff, up to two commits, and one push | pending | Diff checks are clean, generated artifacts are excluded, commits are created, and one normal push is attempted. |
+
+## Release constraints
+
+- The initial `git branch --show-current` and `git status -sb` checks have already been performed exactly once; do not repeat them until the explicitly requested final Git closeout.
+- Tests may clean only their own uniquely prefixed fixtures; Redis/MySQL global cleanup, `TRUNCATE`, unconditional `DELETE`, and automatic migrations remain prohibited.
+- A failed release verification may be repaired only when the root cause is demonstrated and the fix stays within release scope. Every rerun and failure must be recorded in `progress.md` and `findings.md`.

@@ -765,3 +765,20 @@
 - Axios keeps user and administrator tokens separately in localStorage. The order pages currently reload via HTTP after local operations, so WebSocket handling can do idempotent in-memory updates and still rely on HTTP on first load/reconnect.
 - Focused Maven verification passed 31/0/0/0: new `OrderWebSocketIntegrationTest` is 16/0/0/0 and existing lifecycle/timeout tests complete the requested run. Backend package and frontend production build also passed.
 - The first frontend build was blocked by sandboxed esbuild file reads; the single controlled real-path retry built 1742 modules successfully. Vite reported only existing third-party PURE-comment and bundle-size warnings.
+
+## 2026-07-26 V1.0 release closure start
+
+- Release work is restricted to verification, documentation, deployment material, audits, and demonstrated defect fixes on `chore/release-v1.0`; no new business domain, automatic migration, service control, or global test-data cleanup is allowed.
+- Current verification must supersede historical evidence. The specified Maven repository is `C:/Users/28402/.m2/repository`; full regression must be rerun and pass with zero failures and zero errors before release closeout.
+
+## 2026-07-26 Full regression finding: duplicate dorm-room response contract
+
+- The `DormAssetServiceImpl.createRoom` path already calls `ensureRoomNoUnique(buildingId, roomNo, null)` and returns `BusinessException(409, ...)`; a duplicate key remains a persistence fallback. The database candidate DDL also declares `uk_qh_dorm_room_building_room (building_id, room_no)`.
+- `backend/API.md` and `docs/api-contract.md` define `BusinessException` as preserving the normal HTTP response transport while returning the business code in `Result`. Other integration tests intentionally assert `status().isOk()` with `code=409`; therefore the original `DormAssetIntegrationTest` HTTP-409 expectation contradicted the API contract.
+- The release fix retains the duplicate-room assertion, asserts `Result.code=409`, and adds a direct exact-count assertion so the test still proves no duplicate room row is created. A fresh full regression is required next.
+
+## 2026-07-26 Security configuration gate
+
+- `application.yml` had non-empty defaults for both `MYSQL_PASSWORD` and `REDIS_PASSWORD`; they were removed so secrets must come from the launch environment. Deployment documentation now records only variable names.
+- The previous green full regression was `147/0/0/0` before this security change. The required post-change run cannot authenticate to Redis database 2 and ended with `125 errors` (`RedisAuthRequiredException: NOAUTH Authentication required`). This is an external secret-injection blocker, not a reason to restore a committed default password.
+- No automatic configuration, SQL, Redis, service, Git, or credential action is permitted to resolve this blocker. After the user supplies secrets through the approved launch environment, rerun the exact Maven test, package, frontend build if needed, then final Git closeout.
