@@ -292,6 +292,20 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 - 每帧均为专用安全消息对象，不发送完整 `Order` 实体：`messageType`、`orderId`、`orderNo`、`orderStatus`、`statusText`、`occurredAt`、`summary`。
 - 用户消息类型：`ORDER_CREATED`、`ORDER_PAID`、`ORDER_CANCELLED`、`ORDER_TIMEOUT_CANCELLED`、`ORDER_ACCEPTED`、`ORDER_DELIVERING`、`ORDER_COMPLETED`。管理员消息类型：`ADMIN_NEW_ORDER`、`ADMIN_ORDER_CANCELLED`、`ADMIN_ORDER_STATUS_CHANGED`。
 - WebSocket 只作状态变化提醒。首次加载、重连或漏消息后，客户端必须通过既有 HTTP 订单接口获取真实状态。
+## 2026-07-25 管理员营业报表
+
+全部报表接口均为 `GET /api/admin/reports/**`，由既有管理员 Token 和 `AdminContext` 保护；客户端不接收或传入 `adminId`。日期为 `yyyy-MM-dd`，按 `Asia/Shanghai` 自然日使用开始日含、结束日次日零点不含的查询边界；未传日期默认最近 7 天，最大 90 天。空数据返回数值 `0` 和空数组。
+
+| 方法 | 路径 | 查询参数 | 返回要点 |
+|---|---|---|---|
+| GET | `/api/admin/reports/overview` | 无 | 今日订单、有效支付订单、完成/取消订单、营业额、优惠金额、新增用户、有订单店铺，以及待支付、已支付待接单、已接单、配送中四个待处理分项。 |
+| GET | `/api/admin/reports/trend` | `startDate`、`endDate` | 每个自然日返回 `reportDate`、订单数、支付订单数、完成/取消订单数、营业额和优惠金额；缺失日期由服务端补零。 |
+| GET | `/api/admin/reports/shop-ranking` | `startDate`、`endDate`、可选 `top`（1-50，默认10） | `shopId`、`shopName`、`paidOrderCount`、`salesAmount`；销售额相同按店铺 ID 升序。 |
+| GET | `/api/admin/reports/goods-ranking` | 同上 | `goodsId`、`goodsName`、`salesQuantity`、`salesAmount`；销售额相同按商品 ID 升序。 |
+| GET | `/api/admin/reports/coupon-summary` | `startDate`、`endDate` | 已核销优惠券的 `couponId`、`couponName`、`usedCount`、`discountAmount`。 |
+
+统计口径：`total_amount` 为原始商品总额，`pay_amount` 为优惠后实际支付金额；营业额、店铺排行和商品排行只统计 `PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`，不含 `PENDING_PAY` 或 `CANCELLED`。优惠金额固定为 `total_amount - pay_amount`，全部由数据库 `DECIMAL` 映射为 `BigDecimal`。商品排行的销售额为有效订单明细 `subtotal` 合计，避免把一张订单级优惠券任意摊分到商品。
+
 # 2026-07-24 普通优惠券与订单使用接口
 
 所有金额由服务端以 `BigDecimal` 计算并按统一两位小数规则返回；创建订单请求只允许新增 `userCouponId`，不接受 `discountAmount`、`payAmount`、`discountRate`、`couponStatus` 或 `userId`。

@@ -1,5 +1,18 @@
 # 活动进度
 
+## 2026-07-25 管理员营业报表：启动
+
+- 已按用户书面授权仅执行一次 `git branch --show-current` 与 `git status -sb`：当前为 `feature/business-report`，工作区干净。
+- 已建立本轮持久计划：范围限定为管理员概览、趋势、排行、优惠券统计、管理端报表页及专项测试；未修改任何业务代码、SQL、配置或无关模块。
+- 下一步：只读核验指定业务表/实体/认证/管理端/调度/文档，确定实时聚合所需的最小接口和索引结论后实施。
+
+## 2026-07-25 管理员营业报表：实施与验证
+
+- 已实现管理员概览、趋势、店铺/商品排行和优惠券使用统计；聚合均在 `BusinessReportMapper` 中完成，服务层统一 `Asia/Shanghai` 左闭右开日期范围、默认 7 天、最大 90 天、空值归零与趋势补零。未新增日报快照、定时任务、缓存或 SQL 脚本。
+- 已新增管理端营业报表页面、路由、菜单和 API 模块；使用原生 SVG 趋势线与 Element Plus，未新增图表库。页面不重新计算服务端指标。
+- 专项命令首次受沙箱拒绝读取本地 JAR 阻断；受控重试后两次测试分别发现/修复严格 SQL 分组兼容性和测试订单必填地址，第三次 `BusinessReportIntegrationTest` 为 3/0/0/0。测试数据以 `BUSINESS_REPORT_TEST_` 前缀创建，并按用户券、明细、订单、地址、商品、店铺、用户、管理员顺序精确清理。
+- 后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功；前端 `D:/develop/NodeJS/npm.cmd run build` 成功（1745 modules），仅有第三方 PURE 注释和大 chunk 非阻断警告。
+
 ## 2026-07-24 优惠券基础业务与普通订单使用：实施结果（未收口）
 
 - 完成候选人工增量 SQL `backend/src/main/resources/sql/coupon_foundation_increment.sql`；只读实库确认所需字段仍不存在，脚本未执行。
