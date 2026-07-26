@@ -10,11 +10,11 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/qinghe_life?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: ${MYSQL_PASSWORD:1234}
+    password: ${MYSQL_PASSWORD:}
   redis:
     host: ${REDIS_HOST:192.168.100.128}
     port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:123321}
+    password: ${REDIS_PASSWORD:}
     database: 2
     lettuce:
       pool:
