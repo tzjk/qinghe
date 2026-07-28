@@ -7,6 +7,8 @@ public final class RedisKeys {
     public static final long LOGIN_TOKEN_TTL_MINUTES = 30L;
     public static final String ADMIN_TOKEN_KEY = "qh:admin:token:";
     public static final long ADMIN_TOKEN_TTL_MINUTES = 30L;
+    public static final String EXPLORE_HOT = "qh:zset:explore:hot";
+    public static final String SHOP_GEO = "qh:geo:shop";
 
     private RedisKeys() {
     }

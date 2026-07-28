@@ -782,3 +782,39 @@
 - `application.yml` had non-empty defaults for both `MYSQL_PASSWORD` and `REDIS_PASSWORD`; they were removed so secrets must come from the launch environment. Deployment documentation now records only variable names.
 - The previous green full regression was `147/0/0/0` before this security change. The required post-change run cannot authenticate to Redis database 2 and ended with `125 errors` (`RedisAuthRequiredException: NOAUTH Authentication required`). This is an external secret-injection blocker, not a reason to restore a committed default password.
 - No automatic configuration, SQL, Redis, service, Git, or credential action is permitted to resolve this blocker. After the user supplies secrets through the approved launch environment, rerun the exact Maven test, package, frontend build if needed, then final Git closeout.
+# 2026-07-26 探店与附近店铺：审计起点
+
+- 基线：`feature/explore-discovery`，工作区干净。用户授权本轮最终至多两个提交与一次普通推送；中途不提交、不推送、不创建分支。
+- 已发现既有店铺、用户、OSS 上传、地址、Redis/Redisson、营业报表与后台页实现可作为后续限定审计对象；探店具体页面/API/数据模型仍待逐项读取后再决定最小修改集合。
+- 当前用户端 `BlogsView.vue` 仅有“探店内容、互动与评论的页面骨架”占位；路由为 `/blogs`。后台 `/admin/blogs` 与 `/admin/comments` 都仍指向通用占位页面，后台首页也只有店铺管理入口。
+- 审计中一次按推断命名读取 `frontend/src/api/admin-business-report.js` 失败（文件不存在）。后续先使用文件清单定位实际 API 文件名，不重复同一路径。
+- 本轮首次后端编译被外部本地 Maven 仓库读取权限阻断：`C:/Users/28402/.m2/repository/com/fasterxml/jackson/datatype/jackson-datatype-jsr310/2.13.5/jackson-datatype-jsr310-2.13.5.jar` 返回 `Access is denied`。构建尚未到 Java 错误输出；后续不会原样重复该失败命令，而会在实现后做受控诊断并如实报告。
+- 受控编译暴露并修复了 Spring Data Redis GEO 结果类型的包名差异；后端主源码现在可编译。完整测试的第二次运行被 124 秒上限中断，现有本轮 XML 中 Address、管理员认证、宿舍楼和入住集成测试出现 Redis 启动错误，故没有全量绿色结论。
+
+# 2026-07-27 探店专项测试设计
+
+- 复用真实 Redis/MySQL 的现有集成测试基线：Redis 登录会话以 `qh:login:token:{token}` Hash 的 `id` 字段建立；管理员会话以 `qh:admin:token:{token}` 建立。每个测试类使用独立 marker，并精确删除自身用户、店铺、探店记录、互动记录和两个探店 Redis Key。
+- 为验证真实 Redis 异常回退，临时将本轮唯一 `qh:zset:explore:hot` 或 `qh:geo:shop` 写为字符串，令对应 ZSet/GEO 命令产生真实 `WRONGTYPE`；随后精确删除该 Key。此方法不 Mock Redis、不更改服务或配置。
+- 专项命令的第一条业务执行前错误为 Redisson 创建连接到 Redis database 2 时收到 `NOAUTH Authentication required`。三组测试均未完成 Spring 上下文启动，因而没有执行探店发布、互动、热门或附近店铺断言；不得将这 10 个 errors 解释为探店逻辑失败。
+
+# 2026-07-27 ShopServiceImpl 构造器审计
+
+- 构造器问题已由两个有参构造器引起：一个 9 参数生产构造器和一个 8 参数测试兼容构造器均无 `@Autowired`。现已收敛为一个显式 `@Autowired` 的 9 参数构造器，不存在无参构造器。
+- 重跑专项在 testCompile 和 Surefire 启动阶段均不再报告 `ShopServiceImpl: No default constructor found` 或 `NoSuchMethodException`；第一个当前阻断仍是外部 Redis 的 `NOAUTH`。
+## 2026-07-27 探店专项测试：访问控制、所有权状态与 WRONGTYPE 清理
+
+- `WebConfig` 的拦截器排除规则无法依据 HTTP 方法区分 `/api/explore/posts/{id}` 的详情 GET 与 PUT/DELETE；把整个路径排除会意外放开写接口。修复将精确路径和 GET 方法判断置于 `LoginInterceptor`，未扩大 `/api/explore/**` 的匿名范围。
+- `ExploreServiceImpl.ownPost` 已正确抛出 `BusinessException(403)`；观察到的 HTTP 200 来自全局异常处理器。仅为业务码 401/403 设置相应 HTTP 状态，400/404 等保持现有业务响应格式。
+- Redis WRONGTYPE 用例曾在 `@AfterEach` 逐店执行 GEO 删除，错误类型使清理再次失败。共享清理现在先后均只对两个测试专用 Redis 键调用通用 `DEL`，不再执行 GEO/ZSet 命令清理。
+- 指定专项测试的首个真实阻断不是探店断言：`RedissonConfig` 连接 Redis 后 SELECT 2 返回 `NOAUTH Authentication required`，导致 Spring ApplicationContext 无法创建。按本轮约束未修改凭据，也未重试测试。
+## 2026-07-28 探店图片 OSS 上传审计
+
+- 现有 `AliyunOSSOperator` 已由商品/店铺图片上传路径复用；本轮应调用该组件，不能新增 OSS Client 或向前端暴露 AccessKey。
+- 用户端仅有 `/api/user/avatar` 上传接口，语义和尺寸限制均为头像专用；探店需要最小范围的新接口。
+- `BlogsView.vue` 当前使用 `form.imageText` 按换行/逗号转换为 `images` URL 列表；发布接口本身可继续接收上传成功后的 OSS URL 列表。
+
+## 2026-07-28 探店图片 OSS 上传实现
+
+- 用户端不存在可复用的通用图片接口：头像上传是 2MB 且会更新用户资料。因此新增探店专用上传端点，不影响头像行为；所有 AccessKey 仍仅由后端 `AliyunOSSProperties` 通过环境配置提供。
+- 前端 `uploadExploreImage` 使用现有 Axios 实例，因此自动携带用户 Bearer Token；`LoginInterceptor` 仅匿名放行探店 GET，`POST /api/explore/images` 仍受登录保护。
+- 本轮未实现取消时删除 OSS 对象：上传完成但用户取消发布会留下未引用的对象，避免在没有持久化归属关系时按 URL 删除而产生越权删除风险。

@@ -26,6 +26,7 @@ import com.qinghe.life.mapper.GoodsCategoryMapper;
 import com.qinghe.life.mapper.ShopMapper;
 import com.qinghe.life.oss.AliyunOSSOperator;
 import com.qinghe.life.service.ShopService;
+import com.qinghe.life.service.ShopGeoService;
 import com.qinghe.life.utils.RedisKeys;
 import com.qinghe.life.vo.AdminShopVO;
 import com.qinghe.life.vo.CommentVO;
@@ -50,6 +51,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -67,10 +69,12 @@ public class ShopServiceImpl implements ShopService {
     private final CatalogCache catalogCache;
     private final CatalogCacheProperties cacheProperties;
     private final AliyunOSSOperator ossOperator;
+    private final ShopGeoService shopGeoService;
 
+    @Autowired
     public ShopServiceImpl(ShopMapper shopMapper, GoodsMapper goodsMapper, GoodsCategoryMapper goodsCategoryMapper, CommentMapper commentMapper,
                            CategoryMapper categoryMapper, CatalogCache catalogCache, CatalogCacheProperties cacheProperties,
-                           AliyunOSSOperator ossOperator) {
+                           AliyunOSSOperator ossOperator, ShopGeoService shopGeoService) {
         this.shopMapper = shopMapper;
         this.goodsMapper = goodsMapper;
         this.goodsCategoryMapper = goodsCategoryMapper;
@@ -79,6 +83,7 @@ public class ShopServiceImpl implements ShopService {
         this.catalogCache = catalogCache;
         this.cacheProperties = cacheProperties;
         this.ossOperator = ossOperator;
+        this.shopGeoService = shopGeoService;
     }
 
     @Override
@@ -196,6 +201,7 @@ public class ShopServiceImpl implements ShopService {
             throw new BusinessException("店铺保存失败，请稍后重试");
         }
         invalidateShopCache(shop.getId());
+        syncShopGeo(shop);
         return AdminShopVO.fromShop(shop, category.getName());
     }
 
@@ -209,6 +215,7 @@ public class ShopServiceImpl implements ShopService {
             throw new BusinessException("店铺保存失败，请稍后重试");
         }
         invalidateShopCache(id);
+        syncShopGeo(shop);
         return AdminShopVO.fromShop(shop, category.getName());
     }
 
@@ -221,6 +228,7 @@ public class ShopServiceImpl implements ShopService {
             throw new BusinessException("店铺状态保存失败，请稍后重试");
         }
         invalidateShopCache(id);
+        syncShopGeo(shop);
     }
 
     @Override
@@ -291,6 +299,9 @@ public class ShopServiceImpl implements ShopService {
         shop.setStatus(request.getStatus());
         shop.setIsFeatured(request.getIsFeatured());
         shop.setSortOrder(request.getSortOrder());
+        if ((request.getLongitude() == null) != (request.getLatitude() == null)) throw new BusinessException(400, "经纬度必须同时填写或同时留空");
+        shop.setLongitude(request.getLongitude() == null ? null : request.getLongitude().setScale(6, BigDecimal.ROUND_HALF_UP));
+        shop.setLatitude(request.getLatitude() == null ? null : request.getLatitude().setScale(6, BigDecimal.ROUND_HALF_UP));
     }
 
     private Map<Long, String> categoryNames(List<Shop> shops) {
@@ -332,6 +343,8 @@ public class ShopServiceImpl implements ShopService {
         }
         catalogCache.evictAfterCommit(keys);
     }
+
+    private void syncShopGeo(Shop shop) { if (shopGeoService != null) shopGeoService.syncAfterCommit(shop); }
 
     private ValidatedCover validateCover(MultipartFile file) {
         if (file == null || file.isEmpty() || file.getSize() <= 0) {

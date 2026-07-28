@@ -25,6 +25,7 @@ import AdminGoodsCategoryView from '../views/AdminGoodsCategoryView.vue'
 import AdminOrderView from '../views/AdminOrderView.vue'
 import AdminCouponView from '../views/AdminCouponView.vue'
 import AdminBusinessReportView from '../views/AdminBusinessReportView.vue'
+import AdminExploreView from '../views/AdminExploreView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminLoginView from '../views/AdminLoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
@@ -61,9 +62,8 @@ const router = createRouter({ history: createWebHistory(), routes: [
     { path: 'orders', name: 'admin-orders', component: AdminOrderView, meta: { title: '订单管理', requiresAdmin: true } },
     { path: 'coupons', name: 'admin-coupons', component: AdminCouponView, meta: { title: '优惠管理', requiresAdmin: true } },
     { path: 'reports', name: 'admin-reports', component: AdminBusinessReportView, meta: { title: '营业报表', requiresAdmin: true } },
+    { path: 'explore', name: 'admin-explore', component: AdminExploreView, meta: { title: '探店管理', requiresAdmin: true } },
     { path: 'users', component: AdminResourceView, meta: { title: '用户查询', requiresAdmin: true } },
-    { path: 'blogs', component: AdminResourceView, meta: { title: '内容管理', requiresAdmin: true } },
-    { path: 'comments', component: AdminResourceView, meta: { title: '评论管理', requiresAdmin: true } },
     { path: 'dorm', name: 'admin-dorm', component: AdminDormAssetView, meta: { title: '宿舍基础管理', requiresAdmin: true } }
     ,{ path: 'dorm/students', name: 'admin-dorm-students', component: AdminStudentAcademicView, meta: { title: '学生学籍', requiresAdmin: true } }
     ,{ path: 'dorm/checkins', name: 'admin-dorm-checkins', component: AdminDormCheckinView, meta: { title: '入住管理', requiresAdmin: true } }
