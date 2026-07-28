@@ -1,3 +1,50 @@
+# 探店与附近店铺（2026-07-26）
+
+**本轮唯一里程碑：** 在 `feature/explore-discovery` 完成探店内容、互动、Redis 热门排行与附近店铺、管理端内容审核、复用既有报表/订单数据的后台首页，以及专项测试、构建、文档和用户授权的 Git 收口。不执行任何 SQL，不修改订单状态机、优惠券/秒杀、WebSocket、Redis 商品缓存、宿舍/学籍/资产、既有营业报表口径或 `qh_operate_log` 结构。
+
+| 阶段 | 状态 | 交付与判定 |
+|---|---|---|
+| 1. 基线与现状审计 | completed | 已确认分支 `feature/explore-discovery` 且工作区干净；限定审计已完成并形成最小范围结论。 |
+| 2. 候选迁移与后端探店/附近店铺 | pending | 生成人工执行的幂等或一次性说明 SQL；实现 DTO/VO、内容、互动、热门与 GEO 降级，不执行 SQL。 |
+| 3. 用户端与管理端页面 | pending | 重做探店页、定位降级、发布/详情/互动、管理审核与真实首页数据展示。 |
+| 4. 专项集成测试 | pending | 覆盖探店、互动、GEO 与精确清理；不使用 Redis 全库清理。 |
+| 5. 全量验证、文档和 Git 收口 | pending | 运行指定 Maven 测试/package/前端 build，审计差异，至多两个提交并只推送一次。 |
+
+### 本轮固定设计边界
+
+- MySQL 的点赞记录和事务计数是最终事实；Redis `qh:zset:explore:hot` 仅用于热门排序加速，写入失败不得回滚成功的数据库事务。
+- 店铺坐标持久化使用 `DECIMAL`；Redis GEO 键为 `qh:geo:shop`，仅保存启用且正常营业的店铺坐标，不保存用户实时位置。
+- 浏览器定位拒绝后只回退至用户校园/楼栋的中心坐标；若不存在，提示手动选择校区，绝不以宿舍房间号推断位置。
+- 后台首页只能复用已有营业报表与订单接口/服务，不新增重复聚合统计。
+
+### 当前已知事实和错误记录
+
+- 用户书面授权了本轮 Git 检查、提交与一次 push；已按要求执行一次基线检查：当前分支为 `feature/explore-discovery`，`git status -sb` 仅显示该分支，无工作区修改。
+- 旧的根目录计划保留为历史记录；本节为本轮唯一执行计划，所有后续进展追加到 `progress.md` 与 `findings.md`。
+- 审计错误：推断的 `frontend/src/api/admin-business-report.js` 不存在；后续仅根据文件清单读取实际 API 模块。
+- 验证错误：首次指定 Maven 本地仓库在编译启动后无法读取 `jackson-datatype-jsr310-2.13.5.jar`（`Access is denied`）；尚未产生源码编译结果，后续改做诊断后再验证。
+- 实现状态：后端主源码和前端生产构建均通过；完整 Maven 测试被 124 秒上限终止，已落盘 XML 还显示 Redis 启动错误。专项 Explore 集成测试、指定文档和 Git 收口均未开始，不能完成本轮。
+
+## 2026-07-27 探店专项测试与验证缺口
+
+| 阶段 | 状态 | 交付与判定 |
+|---|---|---|
+| 1. 现有实现与测试模式审计 | completed | 仅检查现有探店实现与现有集成测试清理/认证模式；不重构业务。 |
+| 2. 三组真实集成测试 | in_progress | 新增 Explore、Interaction、Nearby 测试，全部使用真实 MySQL/Redis、marker/ID 精确清理。 |
+| 3. 专项验证与真实缺陷修复 | blocked | 指定命令已完成 testCompile 并启动 10 项；Redis database 2 返回 NOAUTH，所有测试在上下文创建阶段错误，需用户提供合规运行环境后才能继续。 |
+
+### 本轮测试规则
+
+- Redis 异常降级通过真实 Redis 将**本轮精确 Key**暂时写成错误类型触发 `WRONGTYPE`，验证后精确删除；不使用 Redis Mock、FLUSHDB 或服务控制。
+- 数据库清理只能按本轮 marker、创建 ID 或明确关联 ID 条件删除；不得使用 TRUNCATE 或无条件 DELETE。
+- 不修改环境变量、密码、Redis 配置、发布文档、Git 状态。
+- 本轮测试夹具已修复一个编译命名冲突（`post` 改为 `seedPost`）；第二次运行结果为 10 tests / 0 failures / 10 errors / 0 skipped。没有探店业务断言执行，且 Redis 凭据不在授权范围内，停止验证。
+
+## 2026-07-27 ShopServiceImpl 构造器注入
+
+- 已完成：移除测试兼容重载，唯一 9 参数构造器标注 `@Autowired`；未增加无参构造器。测试直接构造改为显式提供 `ShopGeoService`。
+- 验证：指定专项重新达到 Surefire，原 `No default constructor found` 不再出现；当前失败为 Redis database 2 的 `NOAUTH`，不属于构造器或本轮授权修复范围。
+
 # 管理员营业报表（2026-07-25）
 
 **本轮唯一里程碑：** 在 `feature/business-report` 实现管理员营业概览、日期范围趋势、店铺/商品排行、优惠券使用统计、管理端图表页与 `BusinessReportIntegrationTest`；采用 MySQL 实时聚合，不执行 SQL 或触及订单状态机、优惠券业务、WebSocket、Redis 商品缓存、宿舍/学籍/资产、Agent 助手或操作日志表结构。
@@ -1085,3 +1132,15 @@
 - The initial `git branch --show-current` and `git status -sb` checks have already been performed exactly once; do not repeat them until the explicitly requested final Git closeout.
 - Tests may clean only their own uniquely prefixed fixtures; Redis/MySQL global cleanup, `TRUNCATE`, unconditional `DELETE`, and automatic migrations remain prohibited.
 - A failed release verification may be repaired only when the root cause is demonstrated and the fix stays within release scope. Every rerun and failure must be recorded in `progress.md` and `findings.md`.
+## 2026-07-27 探店专项测试业务缺口修复
+
+- [x] 仅为四个指定 GET 探店查询增加匿名访问白名单；写接口继续要求登录。
+- [x] 将业务码 401/403 映射为对应 HTTP 状态，保留其他业务错误的既有响应契约。
+- [x] 将探店测试 Redis 清理收敛为对 `qh:geo:shop` 与 `qh:zset:explore:hot` 的精确 `DEL`，并在 WRONGTYPE 用例中使用 `finally` 恢复。
+- [ ] 已执行指定专项 Maven 命令；运行被 Redis `NOAUTH` 上下文启动错误和平台超时阻断，待用户提供已认证运行环境后复验。
+## 2026-07-28 探店图片 OSS 上传
+
+- [x] 审计现有 OSS 操作器、头像上传和探店发布表单；确认探店保存的是 OSS URL 数组。
+- [x] 以现有 OSS 操作器新增受登录保护的探店图片上传端点，并实施 5MB、扩展名和文件签名校验。
+- [x] 将探店发布弹窗替换为 Element Plus 图片卡片上传，处理进度、预览、删除、失败、取消与发布完成清理。
+- [x] 前端构建通过；后端上传与探店专项已执行但受当前 Redis NOAUTH 阻断；不提交、不推送。

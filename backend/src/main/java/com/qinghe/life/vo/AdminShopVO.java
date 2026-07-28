@@ -21,9 +21,11 @@ public class AdminShopVO {
     private Integer isFeatured;
     private String coverImage;
     private Integer sortOrder;
+    private BigDecimal longitude;
+    private BigDecimal latitude;
 
     public static AdminShopVO fromShop(Shop shop, String categoryName) {
         return new AdminShopVO(shop.getId(), shop.getCategoryId(), categoryName, shop.getName(), shop.getAddress(),
-                shop.getPhone(), shop.getScore(), shop.getStatus(), shop.getIsFeatured(), shop.getCoverImage(), shop.getSortOrder());
+                shop.getPhone(), shop.getScore(), shop.getStatus(), shop.getIsFeatured(), shop.getCoverImage(), shop.getSortOrder(), shop.getLongitude(), shop.getLatitude());
     }
 }

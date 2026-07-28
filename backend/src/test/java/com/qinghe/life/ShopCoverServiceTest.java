@@ -9,6 +9,7 @@ import com.qinghe.life.mapper.CategoryMapper;
 import com.qinghe.life.mapper.ShopMapper;
 import com.qinghe.life.oss.AliyunOSSOperator;
 import com.qinghe.life.service.impl.ShopServiceImpl;
+import com.qinghe.life.service.ShopGeoService;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -33,7 +34,7 @@ class ShopCoverServiceTest {
         when(shops.updateById(any(Shop.class))).thenReturn(0);
         when(oss.upload(anyString(), any(java.io.InputStream.class), anyLong(), anyString()))
                 .thenAnswer(invocation -> "https://java-ai1-kevin.oss-cn-beijing.aliyuncs.com/" + invocation.getArgument(0));
-        ShopServiceImpl service = new ShopServiceImpl(shops, null, null, null, categories, mock(CatalogCache.class), new CatalogCacheProperties(), oss);
+        ShopServiceImpl service = new ShopServiceImpl(shops, null, null, null, categories, mock(CatalogCache.class), new CatalogCacheProperties(), oss, mock(ShopGeoService.class));
 
         assertThrows(BusinessException.class, () -> service.uploadAdminShopCover(1L, pngFile()));
         verify(oss).deleteObject(anyString());
@@ -54,7 +55,7 @@ class ShopCoverServiceTest {
         when(oss.ownShopCoverKey(oldUrl)).thenReturn(oldKey);
         when(oss.upload(anyString(), any(java.io.InputStream.class), anyLong(), anyString()))
                 .thenAnswer(invocation -> "https://java-ai1-kevin.oss-cn-beijing.aliyuncs.com/" + invocation.getArgument(0));
-        ShopServiceImpl service = new ShopServiceImpl(shops, null, null, null, categories, mock(CatalogCache.class), new CatalogCacheProperties(), oss);
+        ShopServiceImpl service = new ShopServiceImpl(shops, null, null, null, categories, mock(CatalogCache.class), new CatalogCacheProperties(), oss, mock(ShopGeoService.class));
 
         service.uploadAdminShopCover(1L, pngFile());
         verify(oss).deleteObject(oldKey);

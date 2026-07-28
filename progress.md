@@ -659,3 +659,43 @@
 
 - Full regression after the duplicate-room/bed fixes passed: `147 tests / 0 failures / 0 errors / 0 skipped`. Backend `-DskipTests package` and frontend production build also passed; Vite reported only third-party PURE-comment and large-chunk warnings.
 - Security closure removed non-empty MySQL and Redis password defaults from `application.yml`. The required post-change full regression then failed with `125 errors`: Redis replied `NOAUTH Authentication required` because this process has no `REDIS_PASSWORD`. Per release constraints, no system environment variable was changed and no password was restored to source. Release verification, package-after-security-change, Git diff/commit, and push are blocked pending secure credential injection.
+# 2026-07-26 探店与附近店铺：阶段 1 开始
+
+- 已按用户要求执行 `git branch --show-current` 和 `git status -sb`：当前为 `feature/explore-discovery`，工作区干净。
+- 已恢复计划文件并开始限定范围审计；未读取或修改订单、优惠券、WebSocket、商品缓存、宿舍/学籍/资产业务实现，未执行 SQL。
+- 已确认探店页和后台内容入口均为占位实现；一次推断的管理报表前端 API 文件名不存在，已记录，下一步改按实际文件清单定位。
+- 后端主源码编译尝试：`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests compile` 在 282 个源码编译启动后被本地 Maven 依赖 JAR 的 `Access is denied` 阻断（`jackson-datatype-jsr310-2.13.5.jar`），尚未产生 Java 编译诊断；不以此作为代码验证成功。
+- 后端源码后续受控重试已成功（282 个源文件）。前端 `D:/develop/NodeJS/npm.cmd run build` 的受控真实路径重试成功（1751 modules）；仅有既有第三方 PURE 注释和包体积警告。
+- 完整 Maven 测试未收口：先修复了 `ShopCoverServiceTest` 因新增 GEO 依赖产生的 testCompile 构造器不兼容；重跑在 124 秒上限被终止。已生成的本轮 Surefire XML 显示至少 Address、管理员认证、宿舍楼和入住测试合计 11 个 Redis 启动错误，不能称为 0 failures/0 errors。
+- 尚未新增用户要求的三组 Explore 集成测试，未运行 package，未更新 README/API/数据库设计/交接/验收清单，也未执行 commit 或 push；本里程碑不能判定完成。
+
+# 2026-07-27 探店专项测试：开始
+
+- 仅继续现有 `feature/explore-discovery` 未提交实现，范围收敛为三个指定集成测试与测试揭示的真实缺陷；不重构、不提交、不推送、不更新最终发布文档。
+- 已确认现有集成测试使用真实 Redis/MySQL、MockMvc、Redis 会话 Hash 和 marker 精确清理。Redis ZSet/GEO 降级将使用真实 Redis 的本轮精确 Key 写入错误类型以触发 `WRONGTYPE`，不用 Mock、FLUSHDB 或服务控制。
+- 已新增 `ExploreIntegrationTest`（4 项）、`ExploreInteractionIntegrationTest`（3 项）和 `ExploreNearbyShopIntegrationTest`（3 项），均通过 `ExploreTestSupport` 使用真实 Redis/MySQL、独立 marker 和精确 Key/关联 ID 清理；未使用 Mock Redis、FLUSHDB、TRUNCATE 或无条件 DELETE。
+- 第一次专项 testCompile 暴露测试夹具 `post(...)` 与 MockMvc 静态 `post(...)` 同名冲突；已最小化改名为 `seedPost(...)`，不涉及业务代码。第二次指定专项命令完成编译并启动 10 项测试，但 Spring 上下文创建因 Redis 数据库 2 返回 `NOAUTH Authentication required` 而全部 errors；未进入业务断言。
+- 本轮实际专项结果：10 tests、0 failures、10 errors、0 skipped。Redis 凭据/环境不在本轮授权范围内，未修改配置、密码或服务，未运行全量测试、未提交、未推送。
+
+# 2026-07-27 ShopServiceImpl 构造器注入修复
+
+- 根因确认：`ShopServiceImpl` 同时保留 9 参数生产构造器与 8 参数测试兼容构造器，且没有 `@Autowired`，Spring 因此不能确定注入构造器并尝试无参构造，触发 `No default constructor found`。
+- 已删除 8 参数兼容构造器；唯一的 9 参数构造器显式标注 `@Autowired` 并保留全部必需依赖。未增加无参构造器，未改业务规则、Redis/数据库密码或环境变量。两处 `ShopCoverServiceTest` 直接实例化调整为显式提供 `ShopGeoService` mock。
+- 原三组专项测试已重新编译并进入 Surefire，`ShopServiceImpl` 构造器错误不再出现；当前 10 项均在 Redisson 连接 Redis database 2 时因 `NOAUTH Authentication required` 出错（0 failures / 10 errors / 0 skipped）。未重试或修改认证配置，未提交、未推送。
+## 2026-07-27 探店专项测试：业务缺口修复，验证受环境阻断
+
+- 已收敛匿名访问：仅 `GET /api/explore/posts`、`GET /api/explore/posts/{id}`、`GET /api/explore/posts/{id}/comments` 和 `GET /api/explore/shops/nearby` 可匿名访问；同路径的写操作不在白名单内。
+- 非作者修改/删除的 `BusinessException(403)` 现在返回 HTTP 403；拦截器拒绝的未登录写操作返回 HTTP 401。
+- 三个探店集成测试共 10 个用例维持真实 Redis/MySQL 路径；测试前后精确删除 `qh:geo:shop` 与 `qh:zset:explore:hot`，WRONGTYPE 场景在 `finally` 中立即清理，不使用 FLUSHDB、TRUNCATE 或无条件 DELETE。
+- 已运行指定 Maven clean 专项测试。主代码与测试代码已完成编译，但 Spring 上下文连接 Redis 数据库 2 时出现 `RedisAuthRequiredException: NOAUTH Authentication required`；平台随后在 64 秒时终止。已生成的 `ExploreIntegrationTest` 为 4 tests / 0 failures / 4 errors / 0 skipped；其余 6 个用例未启动。未修改 Redis 或数据库凭据，未 commit、未 push。
+## 2026-07-28 探店图片 OSS 上传：审计完成
+
+- 已开始本轮 OSS 上传改造，仅审计并确认可复用的后端 OSS 操作器与现有前端探店表单；尚未修改业务实现或运行构建。
+
+## 2026-07-28 探店图片 OSS 上传：实现与验证
+
+- 新增受登录保护的 `POST /api/explore/images`，复用 `AliyunOSSOperator` 上传到 `qinghe-life-service/explore/YYYY/MM/<UUID>.<ext>`；后端限制 jpg/jpeg/png/webp、单张 5MB，并校验扩展名、MIME 类型和文件签名。
+- 探店发布弹窗已替换为 Element Plus 图片卡片上传：点击/拖拽、9 张上限、进度、预览、删除与失败状态；发布只提交上传成功 URL，取消/关闭/发布成功均清理本地文件列表。
+- `D:/develop/NodeJS/npm.cmd run build` 成功，Vite 生产构建完成；仅有既有的大 chunk 警告。
+- 新增 `ExploreImageUploadIntegrationTest`（未登录、非图片、超 5MB、成功 URL 与目录前缀）。相关 12 个探店测试均完成编译，但 Spring 上下文因 `RedisAuthRequiredException: NOAUTH Authentication required` 无法创建，未进入接口断言；未改动 Redis 凭据或环境变量。
+- 最终扩展名与文件签名一致性校验后已重新执行同一专项命令，源码和测试再次完成编译；12 个用例仍全部在同一 Redis 认证阻断前失败。

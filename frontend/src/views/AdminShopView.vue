@@ -29,7 +29,7 @@ const rules = {
 const coverPreview = computed(() => previewUrl.value || form.coverImage || '')
 
 function defaultForm() {
-  return { id: null, name: '', categoryId: null, address: '', phone: '', score: 5, status: 1, isFeatured: 0, sortOrder: 0, coverImage: '' }
+  return { id: null, name: '', categoryId: null, address: '', phone: '', score: 5, status: 1, isFeatured: 0, sortOrder: 0, longitude: null, latitude: null, coverImage: '' }
 }
 
 async function load() {
@@ -134,7 +134,7 @@ async function save() {
   if (!valid) return
   saving.value = true
   try {
-    const payload = { name: form.name, categoryId: form.categoryId, address: form.address, phone: form.phone || null, score: form.score, status: form.status, isFeatured: form.isFeatured, sortOrder: form.sortOrder }
+    const payload = { name: form.name, categoryId: form.categoryId, address: form.address, phone: form.phone || null, score: form.score, status: form.status, isFeatured: form.isFeatured, sortOrder: form.sortOrder, longitude: form.longitude, latitude: form.latitude }
     const saved = form.id ? await updateAdminShop(form.id, payload) : await createAdminShop(payload)
     Object.assign(form, saved)
     if (coverFile.value) {

@@ -47,4 +47,12 @@ public class AdminShopSaveRequest {
     @Min(value = 0, message = "排序值不能小于0")
     @Max(value = 999999, message = "排序值不能超过999999")
     private Integer sortOrder;
+
+    @DecimalMin(value = "-180.000000", message = "经度不正确")
+    @DecimalMax(value = "180.000000", message = "经度不正确")
+    private BigDecimal longitude;
+
+    @DecimalMin(value = "-90.000000", message = "纬度不正确")
+    @DecimalMax(value = "90.000000", message = "纬度不正确")
+    private BigDecimal latitude;
 }

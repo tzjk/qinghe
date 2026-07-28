@@ -19,4 +19,6 @@ public class Shop extends BaseEntity {
     private Integer isFeatured;
     private String coverImage;
     private Integer sortOrder;
+    private BigDecimal longitude;
+    private BigDecimal latitude;
 }
