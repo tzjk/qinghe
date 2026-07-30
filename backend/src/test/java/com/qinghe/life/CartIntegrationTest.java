@@ -27,7 +27,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -79,6 +81,7 @@ class CartIntegrationTest {
     private Long shopBId;
     private Long normalGoodsId;
     private Long secondGoodsId;
+    private Long emptyImageGoodsId;
 
     @BeforeEach
     void removeResidualData() {
@@ -152,27 +155,30 @@ class CartIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(404));
 
         Long secondCartId = addCart(ownerHeader, secondGoodsId, 2);
+        addCart(ownerHeader, emptyImageGoodsId, 1);
         addCart(otherHeader, normalGoodsId, 1);
         String summary = mvc.perform(get("/api/cart").header("Authorization", ownerHeader))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.shopGroups.length()").value(2))
-                .andExpect(jsonPath("$.data.totalCount").value(5))
-                .andExpect(jsonPath("$.data.selectedCount").value(5))
-                .andExpect(jsonPath("$.data.selectedAmount").value(47.5))
+                .andExpect(jsonPath("$.data.totalCount").value(6))
+                .andExpect(jsonPath("$.data.selectedCount").value(6))
+                .andExpect(jsonPath("$.data.selectedAmount").value(49.5))
                 .andReturn().getResponse().getContentAsString();
-        List<String> itemNames = JsonPath.read(summary, "$.data.shopGroups[*].items[*].goodsName");
-        assertTrueContains(itemNames, MARKER + "NORMAL_GOODS");
-        List<String> itemImages = JsonPath.read(summary, "$.data.shopGroups[*].items[*].goodsImage");
-        assertTrueContains(itemImages, "/test/m3a-cart-normal.png");
-        List<Number> subtotals = JsonPath.read(summary, "$.data.shopGroups[*].items[*].subtotal");
-        assertTrueContainsAmount(subtotals, new BigDecimal("37.50"));
+        List<Map<String, Object>> items = JsonPath.read(summary, "$.data.shopGroups[*].items[*]");
+        Map<Long, Map<String, Object>> itemsByGoodsId = itemsByGoodsId(items);
+        assertCartItem(itemsByGoodsId.get(normalGoodsId), MARKER + "NORMAL_GOODS", "/test/m3a-cart-normal.png",
+                new BigDecimal("12.50"), 5, 3, true);
+        assertCartItem(itemsByGoodsId.get(secondGoodsId), MARKER + "SECOND_GOODS", "/test/m3a-cart-second.png",
+                new BigDecimal("5.00"), 10, 2, true);
+        assertCartItem(itemsByGoodsId.get(emptyImageGoodsId), MARKER + "EMPTY_IMAGE_GOODS", null,
+                new BigDecimal("2.00"), 2, 1, true);
 
         mvc.perform(put("/api/cart/{id}/selected", ownerCartId).header("Authorization", ownerHeader)
                         .contentType("application/json").content("{\"selected\":false}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.selected").value(false));
         mvc.perform(get("/api/cart").header("Authorization", ownerHeader))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.selectedCount").value(2))
-                .andExpect(jsonPath("$.data.selectedAmount").value(10.0));
+                .andExpect(jsonPath("$.data.selectedAmount").value(12.0));
 
         mvc.perform(delete("/api/cart").header("Authorization", ownerHeader))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(200));
@@ -197,6 +203,8 @@ class CartIntegrationTest {
                 "/test/m3a-cart-normal.png").getId();
         secondGoodsId = createGoods(shopBId, MARKER + "SECOND_GOODS", "ON_SALE", new BigDecimal("5.00"), 10,
                 "/test/m3a-cart-second.png").getId();
+        emptyImageGoodsId = createGoods(shopBId, MARKER + "EMPTY_IMAGE_GOODS", "ON_SALE", new BigDecimal("2.00"), 2,
+                null).getId();
         createGoods(shopAId, MARKER + "OFF_SALE_GOODS", "OFF_SALE", new BigDecimal("3.00"), 10,
                 "/test/m3a-cart-off-sale.png");
         createGoods(closedShop.getId(), MARKER + "CLOSED_SHOP_GOODS", "ON_SALE", new BigDecimal("3.00"), 10,
@@ -260,6 +268,25 @@ class CartIntegrationTest {
         goods.setCoverImage(coverImage);
         goodsMapper.insert(goods);
         return goods;
+    }
+
+    private Map<Long, Map<String, Object>> itemsByGoodsId(List<Map<String, Object>> items) {
+        Map<Long, Map<String, Object>> result = new HashMap<Long, Map<String, Object>>();
+        for (Map<String, Object> item : items) {
+            result.put(((Number) item.get("goodsId")).longValue(), item);
+        }
+        return result;
+    }
+
+    private void assertCartItem(Map<String, Object> item, String goodsName, String goodsImage, BigDecimal price,
+                                int stock, int quantity, boolean selected) {
+        assertNotNull(item);
+        assertEquals(goodsName, item.get("goodsName"));
+        assertEquals(goodsImage, item.get("goodsImage"));
+        assertEquals(0, price.compareTo(new BigDecimal(item.get("price").toString())));
+        assertEquals(stock, ((Number) item.get("stock")).intValue());
+        assertEquals(quantity, ((Number) item.get("quantity")).intValue());
+        assertEquals(selected, item.get("selected"));
     }
 
     private void cleanupTestData() {
