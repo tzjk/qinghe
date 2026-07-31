@@ -18,6 +18,8 @@ public class OrderTimeoutCancelServiceImpl implements OrderTimeoutCancelService 
 
     @Value("${order.timeout.batch-size:100}")
     private int batchSize;
+    @Value("${order.timeout.max-batches-per-run:10}")
+    private int maxBatchesPerRun;
 
     public OrderTimeoutCancelServiceImpl(OrderMapper orderMapper, OrderCancellationService orderCancellationService) {
         this.orderMapper = orderMapper;
@@ -27,7 +29,7 @@ public class OrderTimeoutCancelServiceImpl implements OrderTimeoutCancelService 
     @Override
     public int cancelExpiredOrders() {
         int cancelled = 0;
-        while (true) {
+        for (int batch = 0; batch < Math.max(1, maxBatchesPerRun); batch++) {
             LocalDateTime now = LocalDateTime.now();
             List<Order> expiredOrders = orderMapper.selectList(Wrappers.<Order>lambdaQuery()
                     .eq(Order::getStatus, OrderStatus.PENDING_PAY.getCode())
@@ -43,5 +45,6 @@ public class OrderTimeoutCancelServiceImpl implements OrderTimeoutCancelService 
                 }
             }
         }
+        return cancelled;
     }
 }

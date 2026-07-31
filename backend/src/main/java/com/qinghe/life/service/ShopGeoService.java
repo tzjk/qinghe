@@ -17,7 +17,7 @@ public class ShopGeoService {
     public ShopGeoService(StringRedisTemplate redisTemplate) { this.redisTemplate = redisTemplate; }
     public void syncAfterCommit(final Shop shop) {
         if (shop == null || shop.getId() == null) return;
-        Runnable work = new Runnable() { @Override public void run() { try { String id = String.valueOf(shop.getId()); if (!Integer.valueOf(1).equals(shop.getStatus()) || shop.getLongitude() == null || shop.getLatitude() == null) redisTemplate.opsForGeo().remove(RedisKeys.SHOP_GEO, id); else redisTemplate.opsForGeo().add(RedisKeys.SHOP_GEO, new Point(shop.getLongitude().doubleValue(), shop.getLatitude().doubleValue()), id); } catch (Exception e) { log.warn("同步附近店铺 GEO 失败，shopId={}, type={}", shop.getId(), e.getClass().getSimpleName()); } } };
+        Runnable work = new Runnable() { @Override public void run() { try { String id = String.valueOf(shop.getId()); if (!Integer.valueOf(1).equals(shop.getStatus()) || shop.getLongitude() == null || shop.getLatitude() == null) redisTemplate.opsForGeo().remove(RedisKeys.shopGeo(), id); else redisTemplate.opsForGeo().add(RedisKeys.shopGeo(), new Point(shop.getLongitude().doubleValue(), shop.getLatitude().doubleValue()), id); } catch (Exception e) { log.warn("同步附近店铺 GEO 失败，shopId={}, type={}", shop.getId(), e.getClass().getSimpleName()); } } };
         if (TransactionSynchronizationManager.isSynchronizationActive()) TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() { @Override public void afterCommit() { work.run(); } }); else work.run();
     }
 }

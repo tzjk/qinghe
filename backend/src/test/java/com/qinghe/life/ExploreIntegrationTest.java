@@ -37,12 +37,12 @@ class ExploreIntegrationTest extends ExploreTestSupport {
         Shop shop = shop(MARKER + "SHOP_HOT", category, "116.300003", "39.900003", 1);
         seedPost(userOne, shop, MARKER + "HOT_LOW", 1, LocalDateTime.now().minusMinutes(1));
         seedPost(userOne, shop, MARKER + "HOT_HIGH", 9, LocalDateTime.now().minusMinutes(2));
-        redis.opsForValue().set(com.qinghe.life.utils.RedisKeys.EXPLORE_HOT, "wrong-type-for-this-test");
+        redis.opsForValue().set(com.qinghe.life.utils.RedisKeys.exploreHot(), "wrong-type-for-this-test");
         try {
             mvc.perform(get("/api/explore/posts").param("sort", "hot").param("shopId", String.valueOf(shop.getId())))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.data.records[0].title").value(MARKER + "HOT_HIGH"));
         } finally {
-            redis.delete(com.qinghe.life.utils.RedisKeys.EXPLORE_HOT);
+            redis.delete(com.qinghe.life.utils.RedisKeys.exploreHot());
         }
     }
     @Test void nonOwnerCannotEditAndDisabledPostIsHiddenFromUser() throws Exception {

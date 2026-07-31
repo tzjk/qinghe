@@ -129,7 +129,7 @@ class AdminAuthenticationIntegrationTest {
         }
         if (redis != null) {
             redis.delete(RedisKeys.token(MARKER + "USER"));
-            for (String key : redis.keys(RedisKeys.ADMIN_TOKEN_KEY + "*")) {
+            for (String key : redis.keys(RedisKeys.namespace() + "admin:token:*")) {
                 Map<Object, Object> session = redis.opsForHash().entries(key);
                 if (MARKER.concat("ADMIN").equals(String.valueOf(session.get("username")))) redis.delete(key);
             }
