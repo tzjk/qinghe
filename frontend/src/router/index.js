@@ -32,6 +32,7 @@ import RegisterView from '../views/RegisterView.vue'
 import InitialProfileView from '../views/InitialProfileView.vue'
 import DormScanView from '../views/DormScanView.vue'
 import DormMeView from '../views/DormMeView.vue'
+import AgentAssistantView from '../views/AgentAssistantView.vue'
 
 const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/login', name: 'login', component: LoginView, meta: { title: '登录' } },
@@ -51,7 +52,8 @@ const router = createRouter({ history: createWebHistory(), routes: [
     { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '我的', requiresUser: true } },
     { path: 'dorm/scan', name: 'dorm-scan', component: DormScanView, meta: { title: '扫码入住', requiresUser: true } },
     { path: 'dorm/me', name: 'dorm-me', component: DormMeView, meta: { title: '我的宿舍', requiresUser: true } },
-    { path: 'profile/addresses', name: 'addresses', component: AddressView, meta: { title: '我的地址', requiresUser: true } }
+    { path: 'profile/addresses', name: 'addresses', component: AddressView, meta: { title: '我的地址', requiresUser: true } },
+    { path: 'assistant', name: 'assistant', component: AgentAssistantView, meta: { title: '校园助手' } }
   ] },
   { path: '/admin', component: AdminLayout, meta: { requiresAdmin: true }, children: [
     { path: '', name: 'admin-dashboard', component: AdminDashboardView, meta: { title: '后台', requiresAdmin: true } },
