@@ -211,3 +211,20 @@
 - **范围：** 仅完成店铺真实资料、单张封面、管理员店铺页面和用户端封面同步；不实施商品、订单、优惠券、支付或配送。
 - **结构与实现：** 实际 `qh_shop.cover_image` 支持单图，未生成/执行迁移。管理员接口、页面、缓存精确失效、Mock OSS 补偿与受限旧图删除均复用现有店铺、管理员、AOP、Redis 和 HTTP 栈。
 - **验证：** `Q:\backend` 完整 Maven 回归 40/0/0/0；`mvn clean package -DskipTests` 成功；真实前端路径生产构建成功（1707 modules）。真实 OSS 和浏览器验收保留人工步骤，未虚报为已执行。
+
+## 2026-07-31 Explore Social Phase：签到、关注与关注 Feed
+
+- **状态：** partial（实现、专项文档、后端编译、6 项离线测试与前端构建完成；完整 Mock 业务矩阵和真实独立环境联调待后续审核）。
+- **范围：** Redis Bitmap 签到、MySQL 事实源关注关系、共同关注 Set 缓存、点赞最早五人、关注 Feed ZSet、前端交互、默认离线测试与十份专项文档；不执行 SQL、不连接真实服务、不修改管理员探店审核、订单/秒杀或 agent-service。
+- **审计基线：** `qh_explore_like` 现有唯一键与创建时间已满足点赞用户 ZSet 重建；关注表和签到实现尚不存在；Redis namespace 必须复用 `RedisKeys`。
+- **验证：** 指定 compile 成功；两类新增默认离线测试共 6/0/0/0；前端生产构建 1778 modules 成功。未执行 SQL、真实 Redis/MySQL、真实接口或 Git。
+
+## 2026-07-31 探店社交离线业务行为测试补齐
+
+- **状态：** in_progress（第一批签到行为测试已完成并通过；关注、点赞前五与 Feed 业务行为批次待继续）。
+- **口径：** 仅 Mock 隔离下实际调用 Service/Controller、并断言业务结果或依赖交互的测试计入不少于 45 项目标；现有静态 `DynamicTest` 不计入该数字。
+- **第一批验证：** `SignInServiceBehaviorTest` 新增 12 个真实 Mockito 行为场景，连同既有 `SignInServiceImplTest` 实际运行 16/0/0/0。无真实 Redis/MySQL/SQL 操作。
+
+- **第二批验证：** `FollowServiceBehaviorTest` 与 `CommonFollowBehaviorTest` 实际运行 18/0/0/0。覆盖提交后 Set 缓存、数据库/Redis 回退、列表和公共 VO 安全；无真实 Redis/MySQL/SQL 操作。
+
+- **完成验证：** 新增点赞前五 10 项和 Feed 15 项后，Mockito 业务行为测试累计 59 passed；静态 DynamicTest 65 passed、普通静态契约 2 passed、受控真实入口 1 skipped。后端 compile 与前端 build 成功。未连接真实 Redis/MySQL、未执行 SQL、未修改生产业务代码或 agent-service；现可在人工授权的隔离环境进入真实联调，Git 提交仍待人工审核和明确授权。
