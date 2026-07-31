@@ -12,6 +12,7 @@ import com.qinghe.life.vo.ExploreCommentVO;
 import com.qinghe.life.vo.ExploreInteractionVO;
 import com.qinghe.life.vo.ExplorePostVO;
 import com.qinghe.life.vo.NearbyShopVO;
+import com.qinghe.life.vo.FollowingFeedVO;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface ExploreService {
@@ -26,6 +27,7 @@ public interface ExploreService {
     PageResult<ExploreCommentVO> comments(Long id, PageQuery query);
     ExploreCommentVO comment(Long id, ExploreCommentCreateRequest request);
     PageResult<NearbyShopVO> nearby(NearbyShopQuery query);
+    FollowingFeedVO followingFeed(Long maxTime, Long offset, Integer size);
     PageResult<ExplorePostVO> adminPage(AdminExplorePostQuery query);
     ExplorePostVO adminDetail(Long id);
     PageResult<ExploreCommentVO> adminComments(Long postId, PageQuery query);

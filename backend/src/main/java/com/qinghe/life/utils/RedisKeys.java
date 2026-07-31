@@ -35,5 +35,15 @@ public final class RedisKeys {
     public static String couponSeckillRetry(String messageId) { return key("coupon:seckill:retry:") + messageId; }
     public static String couponSeckillRecoveryLock() { return key("lock:coupon:seckill:pending-recovery"); }
     public static String orderTimeoutLock() { return key("lock:order:timeout-cancel"); }
+    public static String signIn(Long userId, String yearMonth) { return key("sign:") + userId + ":" + yearMonth; }
+    public static String followings(Long userId) { return key("followings:") + userId; }
+    public static String followers(Long userId) { return key("followers:") + userId; }
+    public static String followingsLoaded(Long userId) { return key("followings:loaded:") + userId; }
+    public static String followersLoaded(Long userId) { return key("followers:loaded:") + userId; }
+    public static String followCacheLock(Long userId) { return key("lock:follow-cache:") + userId; }
+    public static String exploreLikers(Long postId) { return key("explore:likers:v2:") + postId; }
+    public static String exploreLikersLoaded(Long postId) { return key("explore:likers:v2:loaded:") + postId; }
+    public static String exploreLikersLock(Long postId) { return key("lock:explore-likers:v2:") + postId; }
+    public static String followingFeed(Long userId) { return key("feed:") + userId; }
     private static String key(String suffix) { return namespace + suffix; }
 }
