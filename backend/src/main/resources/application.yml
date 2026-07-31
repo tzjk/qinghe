@@ -38,6 +38,11 @@ qinghe:
   redis:
     # Changing namespace invalidates old cache/session keys; it never deletes them.
     namespace: ${QINGHE_REDIS_NAMESPACE:qh:dev:}
+  explore:
+    feed:
+      max-size: 1000
+      page-size: 10
+      backfill-size: 20
 
 catalog:
   cache:

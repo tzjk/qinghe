@@ -12,6 +12,7 @@ import com.qinghe.life.vo.ExploreCommentVO;
 import com.qinghe.life.vo.ExploreInteractionVO;
 import com.qinghe.life.vo.ExplorePostVO;
 import com.qinghe.life.vo.NearbyShopVO;
+import com.qinghe.life.vo.FollowingFeedVO;
 import javax.validation.Valid;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -42,4 +43,5 @@ public class ExploreController {
     @GetMapping("/posts/{id}/comments") public Result<PageResult<ExploreCommentVO>> comments(@PathVariable Long id, @Valid PageQuery query) { return Result.success(exploreService.comments(id, query)); }
     @PostMapping("/posts/{id}/comments") public Result<ExploreCommentVO> comment(@PathVariable Long id, @Valid @RequestBody ExploreCommentCreateRequest request) { return Result.success(exploreService.comment(id, request)); }
     @GetMapping("/shops/nearby") public Result<PageResult<NearbyShopVO>> nearby(@Valid NearbyShopQuery query) { return Result.success(exploreService.nearby(query)); }
+    @GetMapping("/feed/following") public Result<FollowingFeedVO> followingFeed(@RequestParam(required = false) Long maxTime, @RequestParam(required = false) Long offset, @RequestParam(required = false) Integer size) { return Result.success(exploreService.followingFeed(maxTime, offset, size)); }
 }

@@ -11,3 +11,4 @@ export const unlikeExplorePost = (id) => http.delete(`/explore/posts/${id}/like`
 export const getExploreComments = (id, params) => http.get(`/explore/posts/${id}/comments`, { params })
 export const createExploreComment = (id, data) => http.post(`/explore/posts/${id}/comments`, data)
 export const getNearbyShops = (params) => http.get('/explore/shops/nearby', { params })
+export const getFollowingFeed = (params) => http.get('/explore/feed/following', { params })

@@ -818,3 +818,52 @@
 - 用户端不存在可复用的通用图片接口：头像上传是 2MB 且会更新用户资料。因此新增探店专用上传端点，不影响头像行为；所有 AccessKey 仍仅由后端 `AliyunOSSProperties` 通过环境配置提供。
 - 前端 `uploadExploreImage` 使用现有 Axios 实例，因此自动携带用户 Bearer Token；`LoginInterceptor` 仅匿名放行探店 GET，`POST /api/explore/images` 仍受登录保护。
 - 本轮未实现取消时删除 OSS 对象：上传完成但用户取消发布会留下未引用的对象，避免在没有持久化归属关系时按 URL 删除而产生越权删除风险。
+
+## 2026-07-31 Explore Social Phase：现有实现审计
+
+- 事实表为 `qh_explore_post` 与 `qh_explore_like`，后者已定义 `post_id`、`user_id`、`created_at`、唯一键 `uk_qh_explore_like_post_user(post_id,user_id)`；无需为本阶段新增点赞字段或唯一约束 SQL。
+- `ExploreServiceImpl.like/unlike` 均是 `@Transactional`：数据库变更与点赞计数先完成，`ExploreHotService.updateAfterCommit` 再写 `qh:...:zset:explore:hot`。新点赞用户 ZSet 必须独立于热门 ZSet，并保持同一提交后、失败不回滚数据库的模式。
+- `ExplorePost.userId` 是作者 ID；`PUBLISHED` 才能在用户端详情、列表和评论中读取，`DISABLED/DELETED` 不可见。没有专门的审核拒绝状态，因此 Feed 读取和投递均以 `PUBLISHED` 为可见条件。
+- `UserDTO` 供登录态和个人资料使用，含实名/学号字段，不能作为公开关注/点赞用户响应。必须新增只含 ID、昵称、头像和可选社交状态的安全 VO。
+- 项目没有 `Follow`、`SignIn`、`common follow` 或社交 Feed 实现。`RedisKeys` 持有运行 namespace，默认配置为 `qh:dev:`，后续键方法只接收业务后缀。`application.yml` 已固定 Jackson `Asia/Shanghai`；社交日期计算应显式使用该时区。
+- 当前 `BlogsView.vue` 只显示完整点赞数与点赞状态，当前 `/profile` 有适合签到卡片的个人中心布局。现有 Explore 集成测试连接真实 Redis/MySQL，不符合本阶段新增默认离线测试要求。
+
+## 2026-07-31 Explore Social Phase：实现与验证发现
+
+- `qh_follow` 只生成未执行的独立增量 SQL；新增数据库实体/Mapper 遵循现有 `createdAt/updatedAt` 映射。帖子点赞结构已经完整，未产生不必要的点赞迁移。
+- Feed 的数据库回退限制关注用户为 500、单次页面最多 50；正常路径使用 `ZREVRANGEBYSCORE` 的 `maxTime/offset`，按 Redis 返回顺序批量读取、可见性和当前关注事实过滤。`DISABLED/DELETED` 与不可公开作者会被惰性清理，项目没有额外“审核不通过”状态。
+- 签到业务日期显式使用 `Asia/Shanghai`，限制当前月和近 12 月，今天未签到连续天数为 0；Redis 异常返回 503，绝不伪造签到成功。
+- 编译和新增默认离线测试均通过。第一次后端/前端验证在受限文件读取下失败，受控重试后成功；未据此声称任何真实 Redis/MySQL 运行能力。新增测试目前是 6 项最小离线覆盖，不等同于用户列出的完整社交业务矩阵。
+
+# 2026-07-31 Explore Social Phase 2 — 审查基线
+
+- 当前实现已包含签到、单向关注、共同关注、点赞用户缓存、关注 Feed、前端关注流和签到页面；先前记录的默认离线覆盖仅有 6 项，不能满足本轮不少于 45 项的要求。
+- `explore_social_increment.sql` 尚未执行；本轮只能对其进行静态 MySQL 8 与项目风格审查，并必须在人工清单中明确幂等性/一次性执行语义和非破坏性回滚方式。
+- 本轮所有业务测试必须使用 Mocked Mapper、Redis/Redisson 操作和用户上下文；真实集成测试仅建立显式开关和隔离 namespace 的入口，不得在本轮运行。
+
+## 2026-07-31 Explore Social Phase 2 — 审查与修复结论
+
+- 签到算法：`Asia/Shanghai`、day offset、位图计数、BITFIELD 的最低位连续计算正确；月份窗口修正为当前月加向前 11 个月，避免“近 12 个月”实际放行 13 个月。Redis 任意异常返回 503，身份只来自 `UserContext`。
+- 关注：事实表和唯一键正确，提交后缓存更新、缓存重建锁、loaded 空集标记、随机 TTL、SINTER 与数据库回退均存在。发现列表先全量读取后内存分页，已改为 `selectPage`；缓存提交后更新失败已增加指标。
+- 点赞：数据库和唯一键是事实源，前五查询为 `created_at,id ASC`。发现旧 ZSet 的同分按 userId 字典序而非点赞 ID 稳定排序，已升级派生 Key 到 `explore:likers:v2:` 并以固定宽度点赞 ID 成员排序；接口仍只暴露公共用户字段。
+- Feed：发现原实现预取 3 倍记录却按预取末项推进游标，会遗漏返回列表之外的帖子；已改为按实际扫描批次推进。发布投递改为最多 200 粉丝一批 Pipeline，容量裁剪保留最新数据；读取端仍过滤非 PUBLISHED、禁用作者和已取消关系，MySQL 回退限制 500 个关注用户与最多 50 条页面。
+- 前端：关注按钮现在防重复提交且失败不保留乐观状态；关注流合并去重并用版本号防止旧页签覆盖；卸载时失效旧请求；点赞头像显式最多五个；签到日历月份改按上海时区。
+- SQL：只创建 `qh_follow`，BIGINT/唯一键/时间字段/两条索引符合当前功能风格；项目未统一逻辑删除，不新增 `deleted`。没有外键与现有项目风格一致；脚本可安全重复运行但不能修复错误的同名既有表，文档规定人工核验后最多执行一次。
+
+## 2026-07-31 Explore Social Phase 2 — 第一批行为测试发现
+
+- `SignInServiceImpl#signIn()` 写入 SETBIT 后返回 `summary()`，因此签到成功场景的 Mock 必须同时配置后续 GETBIT；否则仅测试夹具会得到 `signedToday=false`，并非生产逻辑缺陷。
+- `status()`/`streak()` 的 BITFIELD 值以最低位代表当天：`0b111` 返回连续 3 天、`0b101` 在中间漏签处停为 1、最低位为 0 时返回 0。已以真实 Service 调用覆盖。
+- 当前真实日期的近 12 个月窗口内没有闰年二月；不能将 2024-02 绕过窗口作为合法调用。闰年二月的 29 天循环应在该月份进入允许窗口时，以同一离线 Mock 测试补充回归，不能把静态日期断言计为当前业务执行。
+
+## 2026-07-31 Explore Social Phase 2 — 第二批行为测试发现
+
+- `FollowServiceImpl` 在没有 Spring 事务代理的离线测试中仍会立即执行缓存任务；只有主动初始化 `TransactionSynchronizationManager` 才能验证 afterCommit 之前不写 Redis、afterCommit 后才写派生缓存的真实语义。
+- `updateMembership` 对 Redis 异常只记录 `follow_cache_update_total` 并吞掉异常，因此数据库插入结果和 `FollowCountsVO` 必须保持可用；该降级行为已在 Mock 依赖抛异常时验证。
+- 公共关注/粉丝响应是 `PublicUserSummaryVO`，而非 User 实体。对象序列化验证已证明电话和密码哈希不会进入该业务返回值；静态字段扫描仅作为补充。
+
+## 2026-07-31 Explore Social Phase 2 — 第三、四批与最终验证发现
+
+- 点赞用户 ZSet 的稳定 member 是固定宽度点赞 ID 加 userId。相同 `created_at` 的顺序由数据库 `created_at,id ASC` 查询和 member 的 ID 前缀共同保持；离线重建与前五返回均已实际验证。
+- Feed 容量裁剪命令实际使用 `ZREMRANGEBYRANK key 0 -101`（配置 maxSize=100 的测试夹具），因此删除的是最旧低分数据而非最新数据；同分 scroll offset 会在相同 minTime 上累加。
+- 所有通过状态仅说明 Mock 隔离下的 Service 行为与契约；Redis/MySQL 真实连接、SQL 执行、HTTP 和浏览器联调仍不存在。候选 SQL 不改变既有数据，但已有同名表时 `CREATE TABLE IF NOT EXISTS` 不会补齐错误结构，必须人工停下比对。

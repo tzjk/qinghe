@@ -105,4 +105,19 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>real-social-tests</id>
+            <activation>
+                <property>
+                    <name>env.QINGHE_REAL_SOCIAL_TESTS</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <qinghe.real.social.tests>true</qinghe.real.social.tests>
+            </properties>
+        </profile>
+    </profiles>
 </project>

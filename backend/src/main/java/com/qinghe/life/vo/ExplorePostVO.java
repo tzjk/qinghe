@@ -18,6 +18,8 @@ public class ExplorePostVO {
     private Integer likeCount;
     private Integer commentCount;
     private Boolean liked;
+    private Boolean followedByMe;
+    private List<PublicUserSummaryVO> topLikers;
     private String postStatus;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

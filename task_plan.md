@@ -1144,3 +1144,90 @@
 - [x] 以现有 OSS 操作器新增受登录保护的探店图片上传端点，并实施 5MB、扩展名和文件签名校验。
 - [x] 将探店发布弹窗替换为 Element Plus 图片卡片上传，处理进度、预览、删除、失败、取消与发布完成清理。
 - [x] 前端构建通过；后端上传与探店专项已执行但受当前 Redis NOAUTH 阻断；不提交、不推送。
+
+# 2026-07-31 Explore Social Phase：签到、关注、点赞用户与关注 Feed
+
+**目标：** 在现有 `ExplorePost` 探店链路中实现 Redis Bitmap 签到、以 MySQL 为事实源的单向关注、Redis Set 共同关注缓存、点赞最早五人展示以及 Redis ZSet 关注 Feed；不接入推荐模型、消息队列或真实业务写入。
+
+| 阶段 | 状态 | 验收条件 |
+|---|---|---|
+| 1. 现有实现审计与安全基线 | completed | 已确认探店表、点赞唯一键与时间字段、事务边界、状态、Redis namespace、前端展示和无签到/关注现状。 |
+| 2. 数据/缓存/接口设计 | completed | 候选 SQL、统一 Key、DTO/VO 与 API 契约符合现有命名和安全边界。 |
+| 3. 后端社交实现 | completed | 签到、关注、共同关注、点赞用户、Feed 推送/读取/回填/治理及 Redis 回退已实现。 |
+| 4. 前端与离线测试 | partial | 探店 Feed/关注和个人中心签到已实现；新增 6 项默认 Mockito 离线测试通过，完整业务矩阵仍待补充。 |
+| 5. 文档与构建验证 | completed（真实联调未执行） | 十份文档完成，后端编译/目标测试与前端构建成功；未执行真实 Redis/MySQL。 |
+
+**审计结论：** `qh_explore_like(post_id,user_id,created_at)` 已具备 `uk_qh_explore_like_post_user`；`qh_explore_post.user_id` 是作者字段，`PUBLISHED/DISABLED/DELETED` 是现有可见性状态。`UserContext` 是本项目等价于需求中 UserHolder 的唯一身份来源；没有现有关注、共同关注或签到功能，也没有安全公共用户 VO。`RedisKeys` 会自动添加当前配置的 namespace（默认运行配置为 `qh:dev:`），新业务不得硬编码此前缀。
+
+**错误记录：** 初次计划/记录追加因锚点位于旧计划而未命中，未写入文件；改为使用各文件当前尾部的精确锚点。一次 PowerShell 审计命令错误使用 `||`，当前宿主不支持该分隔符；已改为 `$LASTEXITCODE` 分支后完成只读检索。
+
+**验证结果：** `mvn -Dmaven.repo.local=C:/Users/28402/.m2/repository -DskipTests compile` 成功；`-Dtest=SignInServiceImplTest,ExploreSocialContractTest test` 为 6/0/0/0；前端 `D:/develop/NodeJS/npm.cmd run build` 成功（1778 modules）。首次受限环境读取 Maven JAR/前端 esbuild 配置目录失败，在一次受控重试后成功。未运行真实服务、SQL、HTTP 或真实 Redis/MySQL 联调。
+
+# 2026-07-31 Explore Social Phase 2：代码审查、离线测试与联调准备
+
+**单一里程碑目标：** 在不新增业务能力、不连接真实 Redis/MySQL、不执行 SQL、也不操作服务或真实业务接口的前提下，复核签到、关注、共同关注、点赞前五、关注 Feed 与前端实现，修复已证实的正确性问题，将默认离线社交测试提升至不少于 45 项，并交付 SQL 人工审核、真实联调受控入口和人工验收材料。
+
+| 阶段 | 状态 | 验收证据 |
+|---|---|---|
+| 1. 基线、边界与静态审查 | in_progress | 仅在 `feature/explore-social` 上审查允许范围；逐项记录签到、关注、点赞、Feed、SQL 与前端风险。 |
+| 2. 最小正确性修复与离线测试 | pending | 只修复已证实问题；Mockito/Mock Mapper/Mock Redis 覆盖不少于 45 个社交场景，默认不连接外部基础设施。 |
+| 3. SQL 与真实联调安全入口 | pending | 不执行 SQL；明确一次性 DDL、人工核验与以 `QINGHE_REAL_SOCIAL_TESTS=true` 加隔离 namespace 才启用的测试入口。 |
+| 4. 文档、构建与发布判断 | pending | 指定文档齐全；Maven compile、离线社交测试、前端 build 有实际结果；输出联调/合并/develop 结论。 |
+
+## Phase 2 强制边界
+
+- 禁止访问或操作真实 Redis、MySQL、网络、真实业务接口和既有业务数据；禁止自动执行任何 SQL、服务启动/停止、Redis 清库或删除既有 Key。
+- 禁止修改 `agent-service/`、订单、支付、秒杀 Lua/Redis Stream、管理员探店审核和 Git 配置；禁止 `git add`、`git commit`、`git push`、合并或创建 Pull Request。
+- SQL 仅作静态审查；真实测试默认跳过，只有显式环境开关与独立 namespace 同时存在才可运行，且不得自动删除无法确认归属的 Key。
+- 所有发现、修改、命令结果和失败都同步记录到 `findings.md` 与 `progress.md`；本里程碑结束后停止并等待人工审核。
+
+## Phase 2 错误记录
+
+| 错误 | 尝试 | 处理 |
+|---|---:|---|
+| 首次追加计划时使用过期标题锚点 | 1 | 未写入任何文件；已读取当前文件尾部并改用精确锚点追加。 |
+
+## Phase 2 完成结果
+
+| 阶段 | 状态 | 结果 |
+|---|---|---|
+| 1. 基线、边界与静态审查 | completed | 发现并修复关注内存分页、Feed 游标跳过、无批次投递、同时间点赞顺序、前端竞态/重复提交和 UTC 月份偏移。 |
+| 2. 最小正确性修复与离线测试 | partial | 4 个社交测试类实际运行 72 项：71 通过、1 个真实联调预留项按设计跳过；其中 65 项为静态安全契约检查，不能替代尚未补齐的 Mockito 业务行为矩阵。 |
+| 3. SQL 与真实联调安全入口 | completed | SQL 仅静态审查；新增 `real-social-tests` profile 和 namespace 前置检查，未执行或删除任何 Redis/MySQL 数据。 |
+| 4. 文档、构建与发布判断 | completed（负面结论） | Maven compile 与前端 build 成功，指定文档及四份新增文档完成；因行为测试矩阵未完成，当前不可进入真实联调或合并 develop。 |
+
+## Phase 2 验证与错误记录
+
+- 首次受沙箱约束的 Maven compile 无法读取本地 Jackson JAR；受控重试暴露 `zRemRangeByRank` 在当前 Spring Data Redis API 不存在，已改为 Pipeline 内原生命令，最终 compile 成功。
+- 首次离线测试仅因旧 `explore:likers:` Key 断言失败；实现升级到 `v2` 的预期已同步，重跑后 71/0/0/1。
+- 首次前端 build 因受限 esbuild 无法读取 Vite 配置失败；受控重试成功，保留既有第三方 PURE 注释与 bundle-size 警告。
+
+## 2026-07-31 探店社交离线业务行为测试补齐
+
+**本轮唯一目标：** 在 `feature/explore-social` 为已有签到、关注、共同关注、点赞前五和关注 Feed 实现补齐不少于 45 个真实执行的离线业务行为测试。静态 `DynamicTest` 继续作为审计补充，但绝不计入该业务测试目标；不连接真实 Redis、MySQL 或网络，不执行 SQL。
+
+| 阶段 | 状态 | 交付与判定 |
+|---|---|---|
+| 0. 分支与既有测试盘点 | completed | 已执行用户指定的四项 Git 只读检查，当前分支为 `feature/explore-social`；已识别现有 `SignInServiceImplTest`、静态审计和保留的真实集成入口。 |
+| 1. 真实测试矩阵与签到行为 | completed | 已生成分类矩阵；`SignInServiceBehaviorTest` 12 项和既有 `SignInServiceImplTest` 4 项实际运行 16/0/0/0。 |
+| 2. 关注与共同关注行为 | completed | `FollowServiceBehaviorTest` 14 项、`CommonFollowBehaviorTest` 4 项实际运行 18/0/0/0。 |
+| 3. 点赞前五行为 | completed | `ExploreTopLikersBehaviorTest` 实际运行 10/0/0/0。 |
+| 4. Feed 行为 | completed | `FollowingFeedBehaviorTest` 首次实际运行 15/0/0/0；200+1 Pipeline 断言修订后待最终全体离线回归。 |
+| 5. 汇总验证与检查点 | completed | 后端 compile、127 项社交离线测试和前端 build 均有实际成功结果；指定文档、SQL 审查与无真实基础设施结论已记录。 |
+
+### 本轮不可变约束
+
+- 每个行为测试必须调用 Controller、Service 或核心业务方法，Mock 外部依赖并断言结果、状态、异常或交互；不可用文本检查、方法名搜索、SQL 片段或同质 `DynamicTest` 充数。
+- 不删除上一轮有效改动；仅当新增离线测试暴露具体业务缺陷时，才以最小范围修复生产代码。
+- 每个批次结束先运行该批目标测试，再写入矩阵和进度记录，之后才开始下一批；真实 Redis/MySQL 集成测试保持受控入口且本轮不运行。
+
+### 本轮错误记录
+
+| 错误 | 尝试 | 处理 |
+|---|---:|---|
+| PowerShell 将 Maven `-Dtest` 中的逗号解释为参数分隔符。 | 1 | 已将整个 `-Dtest=...,...` 参数加引号。 |
+| 沙箱内的 Maven testCompile 报大量既有主包不存在并以 `Access is denied` 结束。 | 1 | 受控重试确认主/测试编译均可完成，该首轮是环境文件访问限制。 |
+| 新签到测试两项将 `signIn()` 后的状态读取误设为默认 `false`。 | 1 | 补充 `getBit=true` Mock；这是测试夹具缺失，不是生产签到缺陷。 |
+| 关注首轮中 Redis varargs Mock 未匹配、缓存锁未声明持有状态，且列表调用验证目标用户 `1` 未布置。 | 1 | 改为按单个成员 Mock `add`，声明 `isHeldByCurrentThread=true`，并为当前用户补充 UserMapper 返回值；均为夹具修正。 |
+| Feed 行为测试首次 testCompile 将 `RedisConnection.execute` 的命令参数误当作 `byte[]`。 | 1 | 改为捕获 Spring Data Redis API 的 `String` command；这是测试代码编译修正。 |
+| Feed 裁剪断言第二次把 Redis varargs 整体捕获为 `byte[][]`，Mockito 实际按三个 `byte[]` 参数记录。 | 1 | 改为逐项捕获 key、start、end；这是测试夹具修正。 |

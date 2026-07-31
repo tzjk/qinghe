@@ -699,3 +699,52 @@
 - `D:/develop/NodeJS/npm.cmd run build` 成功，Vite 生产构建完成；仅有既有的大 chunk 警告。
 - 新增 `ExploreImageUploadIntegrationTest`（未登录、非图片、超 5MB、成功 URL 与目录前缀）。相关 12 个探店测试均完成编译，但 Spring 上下文因 `RedisAuthRequiredException: NOAUTH Authentication required` 无法创建，未进入接口断言；未改动 Redis 凭据或环境变量。
 - 最终扩展名与文件签名一致性校验后已重新执行同一专项命令，源码和测试再次完成编译；12 个用例仍全部在同一 Redis 认证阻断前失败。
+
+# 2026-07-31 Explore Social Phase：阶段 1 审计完成
+
+- 已确认当前探店实现为 `qh_explore_post`、`qh_explore_like`、`qh_explore_comment`；点赞表有 `(post_id,user_id)` 唯一索引和 `created_at`，点赞/取消点赞均在 `ExploreServiceImpl` 的数据库事务内，并在事务提交后更新独立热门 ZSet。
+- 帖子作者字段为 `user_id`，公开查询仅返回 `post_status=PUBLISHED`；后台使用 `PUBLISHED`、`DISABLED`、`DELETED`。当前没有审核拒绝的单独状态，后续 Feed 将只接收/展示 `PUBLISHED`。
+- 当前 Redis namespace 由 `RedisNamespaceConfiguration` 注入 `RedisKeys`，运行默认值为 `qh:dev:`；当前 `ExplorePostVO` 只有作者昵称/头像、完整点赞数与 `liked`，没有点赞用户列表。前端 `BlogsView.vue` 仅有最新/热门与附近，个人中心适合放置签到入口。
+- 当前没有关注、共同关注、签到或安全公共用户 VO；`UserContext.getUserId()` 是项目中等价于需求 UserHolder 的受登录拦截器保障的身份来源。未执行 SQL、真实 Redis/MySQL、真实 HTTP、Git 或业务写入。
+
+# 2026-07-31 Explore Social Phase：实现与验证
+
+- 已新增候选 `qh_follow` 迁移（未执行）、单向关注 Service/Controller、公开安全用户 VO、Redis Set 缓存重建/共同关注回退、Bitmap 签到、点赞用户 ZSet 重建和关注 Feed 推送、回填、有限清理、滚动游标、惰性过滤及容量裁剪。
+- 探店发布、点赞、取消点赞和关注写操作均先提交 MySQL，再在提交后维护派生 Redis；Redis 失败只记录低基数指标/日志，不回滚事实写入。发布 Feed 投递使用 Redis Pipeline。
+- 前端新增探店“推荐/热门/关注”页签、关注动态加载、作者关注按钮、最早点赞用户头像，以及个人中心签到状态、日历和幂等按钮；未改管理员探店审核页面。
+- 已新增 2 个默认离线测试类、6 项测试，`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" "-Dtest=SignInServiceImplTest,ExploreSocialContractTest" test` 为 6/0/0/0。后端指定 compile 成功；前端 build 成功（1778 modules，仅既有第三方 PURE 注释/大包提示）。
+- 未执行全量测试、真实 Redis/MySQL/HTTP 联调、SQL、服务控制、Git 或真实业务写入。完整 45 项社交业务矩阵仍需后续补齐 Mock 测试并在人为批准的独立 namespace 环境联调。
+
+# 2026-07-31 Explore Social Phase 2 — 启动记录
+
+- 用户明确要求继续验收和加固探店社交功能；已按要求执行只读 Git 基线检查：当前分支为 `feature/explore-social`，工作区已有本功能相关未提交改动。
+- 已恢复 `AGENTS.md`、`docs/PROJECT_SPEC.md`、`PROJECT_PLAN.md`、`task_plan.md`、`progress.md` 和 `findings.md`；本轮仅执行一个 Phase 2 里程碑。
+- 当前阶段 1（基线、边界与静态审查）进行中；尚未执行 SQL、未连接 Redis/MySQL、未调用业务接口、未启动/停止服务，亦未执行任何 Git 写操作。
+
+# 2026-07-31 Explore Social Phase 2 — 完成记录
+
+- 静态审查并修复：关注/粉丝列表改用数据库分页；关注 Redis 更新失败补充低基数指标；Feed 改为 200 粉丝分页 Pipeline、保留最新容量并修正滚动游标；点赞用户 ZSet 使用 `v2` Key 与点赞 ID 稳定成员；签到近 12 月窗口包含当前月；前端防重、去重、页签竞态/卸载忽略和上海月份计算已加固。
+- 新增 `ExploreSocialPhase2StaticSafetyTest`（65 个 DynamicTest）和默认禁用的 `RealSocialIntegrationReservedTest`；现有 `SignInServiceImplTest`、`ExploreSocialContractTest` 同时运行。最终社交离线结果：72 run、71 passed、0 failed、0 errors、1 skipped（仅环境开关保护的真实入口）。其中 65 项为静态安全契约检查，不能替代用户要求的 45 项 Mockito/Mock Mapper 业务行为矩阵；因此本轮结论为不可进入真实联调。
+- `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests compile` 最终成功；`D:/develop/NodeJS/npm.cmd run build` 最终成功（1778 modules，只有既有第三方 PURE/bundle-size 警告）。
+- 未执行 SQL、未连接 Redis/MySQL/网络、未调用真实业务接口、未启动/停止服务、未修改 `agent-service/`、订单、支付或秒杀；未执行 Git 写操作。
+
+# 2026-07-31 Explore Social Phase 2 — 离线业务行为测试第一批
+
+- 已新增 `SignInServiceBehaviorTest`，以 Mock `StringRedisTemplate`、`ValueOperations` 和 Redis connection 实际调用 `SignInServiceImpl`。新增场景覆盖首次 SETBIT/day-1 偏移、重复签到、GETBIT 状态、BITCOUNT、连续位、漏签中断、未签到 0、跨月 Key、未来/非法月份拒绝，以及 status/calendar Redis 异常映射 503。
+- 目标命令首次在受限环境的 testCompile 阶段出现既有主类解析错误并以 `Access is denied` 结束；受控重试可完成编译。新测试首次有 2 项失败，根因是夹具未为 `signIn()` 后的 summary GETBIT 配置返回值；修正 Mock 后重跑 `mvn "-Dtest=SignInServiceImplTest,SignInServiceBehaviorTest" test` 成功：16 run、16 passed、0 failed、0 errors、0 skipped。
+- 本批新增/修改：`backend/src/test/java/com/qinghe/life/SignInServiceBehaviorTest.java`、`docs/explore-social/15-behavior-test-matrix.md`、`task_plan.md`、`progress.md`、`findings.md`、`PROJECT_PLAN.md`。未连接 Redis/MySQL，未执行 SQL。
+
+# 2026-07-31 Explore Social Phase 2 — 离线业务行为测试第二批
+
+- 已新增 `FollowServiceBehaviorTest` 14 项和 `CommonFollowBehaviorTest` 4 项。所有场景直接调用 `FollowServiceImpl`，Mock Follow/User Mapper、StringRedisTemplate、SetOperations、Redisson RLock 和 Feed Service。
+- 覆盖数据库成功后才在事务 afterCommit 写 SADD/SREM、重复关注/取消幂等、自关注/不存在目标拒绝、派生缓存失败但事实结果保留、空集合 loaded 标识、数据库重建、锁失败回退、关注/粉丝分页、计数、SINTER、MySQL 回退和实际 VO JSON 无 phone/passwordHash。
+- 首次运行有 5 项夹具失败：Redis varargs Mock 未匹配、锁未声明持有状态、列表未布置当前用户查询；均已修正，未发现生产缺陷。重跑 `mvn "-Dtest=FollowServiceBehaviorTest,CommonFollowBehaviorTest" test`：18 run、18 passed、0 failed、0 errors、0 skipped。
+- 本批新增/修改：`backend/src/test/java/com/qinghe/life/FollowServiceBehaviorTest.java`、`backend/src/test/java/com/qinghe/life/CommonFollowBehaviorTest.java`、`docs/explore-social/15-behavior-test-matrix.md`、`task_plan.md`、`progress.md`、`findings.md`、`PROJECT_PLAN.md`。未连接 Redis/MySQL，未执行 SQL。
+
+# 2026-07-31 Explore Social Phase 2 — 离线业务行为测试第三、四批与收口
+
+- 第三批新增 `ExploreTopLikersBehaviorTest`，目标命令通过 10/0/0/0：验证 ZADD NX/ZREM、最早五人、created_at/id 稳定成员、缓存重建、Redis→MySQL 回退、空 loaded、公开用户字段和登录/匿名 likedByMe。
+- 第四批新增 `FollowingFeedBehaviorTest`，初次 15/0/0/0；随后将分批场景强化为 200+1 粉丝两次 Pipeline。最终全部离线社交命令再次验证该场景通过，覆盖提交后推送、无/非公开帖子、member、容量裁剪、游标/同时间 offset、顺序、惰性过滤、MySQL 回退和回填。
+- 最终后端命令 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests compile` 成功。全部社交离线测试为 127 run、126 passed、0 failed、0 errors、1 skipped：Mockito 业务行为 59 passed，DynamicTest 静态审计 65 passed，普通静态契约 2 passed，真实集成入口 1 skipped。前端 `D:/develop/NodeJS/npm.cmd run build` 成功（1778 modules；既有 PURE/bundle-size 警告）。
+- SQL 仅静态读取 `explore_social_increment.sql`：只创建 MySQL 8 `qh_follow`，无 DROP/TRUNCATE/数据修改，唯一键和两条索引存在，已有表时必须停止人工比对、脚本最多人工执行一次。未执行 SQL，未连接 Redis/MySQL/网络，未启动服务，未修改 agent-service、订单、支付、秒杀或管理端。
+- 本批新增/修改：`backend/src/test/java/com/qinghe/life/ExploreTopLikersBehaviorTest.java`、`backend/src/test/java/com/qinghe/life/FollowingFeedBehaviorTest.java`、`docs/explore-social/08-test-report.md`、`docs/explore-social/09-manual-integration-checklist.md`、`docs/explore-social/14-release-readiness.md`、`docs/explore-social/15-behavior-test-matrix.md`、`docs/explore-social/16-phase2-test-completion.md`、`task_plan.md`、`progress.md`、`findings.md`、`PROJECT_PLAN.md`。本轮没有生产代码修改。
