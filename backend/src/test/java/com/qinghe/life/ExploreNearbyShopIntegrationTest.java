@@ -29,12 +29,12 @@ class ExploreNearbyShopIntegrationTest extends ExploreTestSupport {
     }
     @Test void realRedisWrongTypeFallsBackToMysqlDistanceQuery() throws Exception {
         Shop near = shop(MARKER + "SHOP_FALLBACK_NEAR", category, "116.300000", "39.900000", 1); Shop far = shop(MARKER + "SHOP_FALLBACK_FAR", category, "116.315000", "39.900000", 1);
-        redis.delete(RedisKeys.SHOP_GEO); redis.opsForValue().set(RedisKeys.SHOP_GEO, "wrong-type-for-this-test");
+        redis.delete(RedisKeys.shopGeo()); redis.opsForValue().set(RedisKeys.shopGeo(), "wrong-type-for-this-test");
         try {
             mvc.perform(get("/api/explore/shops/nearby").param("longitude", "116.300000").param("latitude", "39.900000").param("radius", "5").param("page", "1").param("size", "10"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.data.records[0].id").value(near.getId())).andExpect(jsonPath("$.data.records[1].id").value(far.getId()));
         } finally {
-            redis.delete(RedisKeys.SHOP_GEO);
+            redis.delete(RedisKeys.shopGeo());
         }
     }
 }

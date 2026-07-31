@@ -32,7 +32,7 @@ public class ExploreHotService {
 
     public List<Long> rankedPostIds(long limit) {
         try {
-            Set<String> values = redisTemplate.opsForZSet().reverseRange(RedisKeys.EXPLORE_HOT, 0, limit - 1);
+            Set<String> values = redisTemplate.opsForZSet().reverseRange(RedisKeys.exploreHot(), 0, limit - 1);
             if (values == null || values.isEmpty()) { rebuild(); return Collections.emptyList(); }
             List<Long> ids = new ArrayList<Long>();
             for (String value : values) try { ids.add(Long.valueOf(value)); } catch (NumberFormatException ignored) { }
@@ -44,18 +44,18 @@ public class ExploreHotService {
     public void rebuild() {
         try {
             List<ExplorePost> posts = postMapper.selectList(Wrappers.<ExplorePost>lambdaQuery().eq(ExplorePost::getPostStatus, "PUBLISHED").orderByDesc(ExplorePost::getLikeCount).last("LIMIT 500"));
-            redisTemplate.delete(RedisKeys.EXPLORE_HOT);
-            for (ExplorePost post : posts) redisTemplate.opsForZSet().add(RedisKeys.EXPLORE_HOT, String.valueOf(post.getId()), Math.max(0, post.getLikeCount() == null ? 0 : post.getLikeCount()));
+            redisTemplate.delete(RedisKeys.exploreHot());
+            for (ExplorePost post : posts) redisTemplate.opsForZSet().add(RedisKeys.exploreHot(), String.valueOf(post.getId()), Math.max(0, post.getLikeCount() == null ? 0 : post.getLikeCount()));
         } catch (Exception exception) { log.warn("重建探店热门排行失败，type={}", exception.getClass().getSimpleName()); }
     }
 
     private void updateScore(Long postId, int delta, int databaseLikeCount) {
         try {
-            Double score = redisTemplate.opsForZSet().score(RedisKeys.EXPLORE_HOT, String.valueOf(postId));
-            if (score == null) redisTemplate.opsForZSet().add(RedisKeys.EXPLORE_HOT, String.valueOf(postId), Math.max(0, databaseLikeCount));
-            else redisTemplate.opsForZSet().incrementScore(RedisKeys.EXPLORE_HOT, String.valueOf(postId), delta);
-            Double current = redisTemplate.opsForZSet().score(RedisKeys.EXPLORE_HOT, String.valueOf(postId));
-            if (current != null && current.doubleValue() < 0D) redisTemplate.opsForZSet().add(RedisKeys.EXPLORE_HOT, String.valueOf(postId), 0D);
+            Double score = redisTemplate.opsForZSet().score(RedisKeys.exploreHot(), String.valueOf(postId));
+            if (score == null) redisTemplate.opsForZSet().add(RedisKeys.exploreHot(), String.valueOf(postId), Math.max(0, databaseLikeCount));
+            else redisTemplate.opsForZSet().incrementScore(RedisKeys.exploreHot(), String.valueOf(postId), delta);
+            Double current = redisTemplate.opsForZSet().score(RedisKeys.exploreHot(), String.valueOf(postId));
+            if (current != null && current.doubleValue() < 0D) redisTemplate.opsForZSet().add(RedisKeys.exploreHot(), String.valueOf(postId), 0D);
         } catch (Exception exception) { log.warn("更新探店热门排行失败，postId={}, type={}", postId, exception.getClass().getSimpleName()); }
     }
 }

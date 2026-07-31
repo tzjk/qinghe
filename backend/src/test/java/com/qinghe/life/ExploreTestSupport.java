@@ -64,7 +64,7 @@ abstract class ExploreTestSupport {
     protected ExplorePost seedPost(User user, Shop shop, String title, int likes, LocalDateTime createdAt) { ExplorePost item = new ExplorePost(); item.setUserId(user.getId()); item.setShopId(shop.getId()); item.setTitle(title); item.setContent(MARKER + "CONTENT"); item.setLikeCount(likes); item.setCommentCount(0); item.setPostStatus("PUBLISHED"); item.setCreatedAt(createdAt); item.setUpdatedAt(createdAt); postMapper.insert(item); return item; }
     protected String userAuthorization(String token) { return "Bearer " + token; }
     protected String adminAuthorization() { return "Bearer " + ADMIN_TOKEN; }
-    protected void geo(Shop shop) { redis.opsForGeo().add(RedisKeys.SHOP_GEO, new Point(shop.getLongitude().doubleValue(), shop.getLatitude().doubleValue()), String.valueOf(shop.getId())); }
+    protected void geo(Shop shop) { redis.opsForGeo().add(RedisKeys.shopGeo(), new Point(shop.getLongitude().doubleValue(), shop.getLatitude().doubleValue()), String.valueOf(shop.getId())); }
 
     private void userSession(String token, User user) { Map<String, String> session = new HashMap<String, String>(); session.put("id", String.valueOf(user.getId())); session.put("nickname", user.getNickname()); redis.opsForHash().putAll(RedisKeys.token(token), session); }
     private void adminSession() { Map<String, String> session = new HashMap<String, String>(); session.put("adminId", String.valueOf(admin.getId())); session.put("username", admin.getUsername()); session.put("displayName", admin.getDisplayName()); redis.opsForHash().putAll(RedisKeys.adminToken(ADMIN_TOKEN), session); }
@@ -84,8 +84,8 @@ abstract class ExploreTestSupport {
     }
     private void clearExploreRedisKeys() {
         if (redis != null) {
-            redis.delete(RedisKeys.SHOP_GEO);
-            redis.delete(RedisKeys.EXPLORE_HOT);
+            redis.delete(RedisKeys.shopGeo());
+            redis.delete(RedisKeys.exploreHot());
         }
     }
 }

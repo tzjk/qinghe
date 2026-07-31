@@ -3,6 +3,7 @@ package com.qinghe.life.cache;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qinghe.life.config.CatalogCacheProperties;
+import com.qinghe.life.redis.RedisBusinessMetrics;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -28,13 +29,15 @@ public class CatalogCache {
     private final RedissonClient redissonClient;
     private final ObjectMapper objectMapper;
     private final CatalogCacheProperties properties;
+    private final RedisBusinessMetrics metrics;
 
     public CatalogCache(StringRedisTemplate redisTemplate, RedissonClient redissonClient,
-                        ObjectMapper objectMapper, CatalogCacheProperties properties) {
+                        ObjectMapper objectMapper, CatalogCacheProperties properties, RedisBusinessMetrics metrics) {
         this.redisTemplate = redisTemplate;
         this.redissonClient = redissonClient;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     public <T> T getObject(String key, String lockKey, Class<T> type, long ttlMinutes, Supplier<T> databaseLoader) {
@@ -64,18 +67,24 @@ public class CatalogCache {
     }
 
     public void evict(Collection<String> keys) {
-        try {
-            redisTemplate.delete(keys);
-        } catch (Exception exception) {
-            log.warn("目录缓存删除失败，keyCount={}，type={}", keys == null ? 0 : keys.size(), exception.getClass().getSimpleName());
+        int retries = Math.max(1, properties.getEvictMaxRetries());
+        for (int attempt = 1; attempt <= retries; attempt++) {
+            try { redisTemplate.delete(keys); return; }
+            catch (Exception exception) {
+                metrics.count("cache_evict_failure_total", "catalog", "evict", "failure", "CACHE_EVICT_FAILED");
+                log.warn("目录缓存删除失败，keyCount={}，attempt={}, type={}", keys == null ? 0 : keys.size(), attempt, exception.getClass().getSimpleName());
+                if (attempt < retries) waitForEvictRetry();
+            }
         }
     }
 
     private <T> T get(String key, String lockKey, Reader<T> reader, Writer<T> writer, Supplier<T> databaseLoader) {
         CacheLookup<T> initial = reader.read();
         if (initial.hit) {
+            metrics.count(initial.value == null ? "cache_null_hit_total" : "cache_hit_total", "catalog", "read", "success", "none");
             return initial.value;
         }
+        metrics.count("cache_miss_total", "catalog", "read", "miss", "none");
         if (!initial.available) {
             return databaseLoader.get();
         }
@@ -84,8 +93,10 @@ public class CatalogCache {
             boolean locked = false;
             try {
                 lock = redissonClient.getLock(lockKey);
-                locked = lock.tryLock(properties.getLockWaitMillis(), properties.getLockLeaseSeconds(), TimeUnit.SECONDS);
+                long started = System.nanoTime(); locked = lock.tryLock(properties.getLockWaitMillis(), TimeUnit.MILLISECONDS);
+                metrics.lockWait("catalog", "rebuild", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
                 if (locked) {
+                    metrics.count("redis_lock_acquire_total", "catalog", "rebuild", "success", "none");
                     CacheLookup<T> doubleChecked = reader.read();
                     if (doubleChecked.hit) {
                         return doubleChecked.value;
@@ -95,8 +106,10 @@ public class CatalogCache {
                     }
                     T value = databaseLoader.get();
                     writer.write(value);
+                    metrics.count("cache_rebuild_total", "catalog", "rebuild", "success", "none");
                     return value;
                 }
+                metrics.count("redis_lock_acquire_failure_total", "catalog", "rebuild", "failure", "LOCK_ACQUIRE_FAILED");
                 waitBeforeRetry();
                 CacheLookup<T> retry = reader.read();
                 if (retry.hit) {
@@ -185,6 +198,10 @@ public class CatalogCache {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }
+    }
+    private void waitForEvictRetry() {
+        try { Thread.sleep(Math.max(1L, Math.min(properties.getEvictRetryMillis(), 100L))); }
+        catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
     }
 
     private void deleteCorruptKey(String key, Exception exception) {

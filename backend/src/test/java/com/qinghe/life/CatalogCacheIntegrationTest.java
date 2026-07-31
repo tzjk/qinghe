@@ -207,7 +207,7 @@ class CatalogCacheIntegrationTest {
         StringRedisTemplate unavailableRedis = mock(StringRedisTemplate.class);
         when(unavailableRedis.opsForValue()).thenThrow(new IllegalStateException("redis unavailable"));
         CatalogCache degradedCache = new CatalogCache(unavailableRedis, mock(org.redisson.api.RedissonClient.class),
-                new ObjectMapper(), cacheProperties);
+                new ObjectMapper(), cacheProperties, mock(com.qinghe.life.redis.RedisBusinessMetrics.class));
         assertEquals("mysql", degradedCache.getObject("qh:cache:shop:940001", "qh:lock:cache:shop:940001", String.class,
                 cacheProperties.getShopTtlMinutes(), () -> "mysql"));
     }
