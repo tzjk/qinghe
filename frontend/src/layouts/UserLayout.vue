@@ -7,6 +7,7 @@ import { getCart } from '../api/cart'
 import { logout as logoutRequest } from '../api/user'
 import { useUserStore } from '../stores/user'
 import { formatDisplayName } from '../utils/display-name'
+import FloatingCampusAssistant from '../components/assistant/FloatingCampusAssistant.vue'
 
 const router = useRouter()
 const user = useUserStore()
@@ -67,6 +68,7 @@ onMounted(loadCartCount)
     </el-header>
     <el-main class="user-main"><router-view /></el-main>
     <footer class="user-footer"><div><strong>青禾生活</strong><span>校园生活服务平台</span></div><span><el-icon><Location /></el-icon> 发现身边的校园好去处</span></footer>
+    <FloatingCampusAssistant />
   </el-container>
 </template>
 
