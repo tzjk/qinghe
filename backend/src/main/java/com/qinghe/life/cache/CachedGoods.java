@@ -31,8 +31,11 @@ public class CachedGoods {
     }
 
     public GoodsVO toGoodsVO(Goods current) {
-        return new GoodsVO(id, shopId, categoryId, categoryName, name, description, price,
-                current.getStock(), current.getSalesCount(), current.getSaleStatus(), coverImage);
+        return new GoodsVO(id, shopId, categoryId, categoryName, name,
+                description == null ? current.getDescription() : description,
+                price == null ? current.getPrice() : price,
+                current.getStock(), current.getSalesCount(), current.getSaleStatus(),
+                coverImage == null ? current.getCoverImage() : coverImage);
     }
 
     public Long getId() { return id; }
@@ -40,4 +43,7 @@ public class CachedGoods {
     public Long getCategoryId() { return categoryId; }
     public String getCategoryName() { return categoryName; }
     public String getName() { return name; }
+    public String getDescription() { return description; }
+    public BigDecimal getPrice() { return price; }
+    public String getCoverImage() { return coverImage; }
 }

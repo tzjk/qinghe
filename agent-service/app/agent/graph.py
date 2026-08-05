@@ -8,5 +8,5 @@ class AgentGraph:
     def __init__(self, orchestrator: AgentOrchestrator) -> None:
         self._orchestrator = orchestrator
 
-    async def invoke(self, message: str, event_sink=None, conversation_context=None) -> AgentResult:
-        return await self._orchestrator.handle(message, event_sink=event_sink, conversation_context=conversation_context)
+    async def invoke(self, message: str, event_sink=None, conversation_context=None, stream_answer: bool = False) -> AgentResult:
+        return await self._orchestrator.handle(message, event_sink=event_sink, conversation_context=conversation_context, stream_answer=stream_answer)

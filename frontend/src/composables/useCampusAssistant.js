@@ -13,8 +13,10 @@ const currentToolStatus = ref('')
 const conversationId = ref(getAgentConversationId())
 const error = ref('')
 const hasUnread = ref(false)
+const mascotState = ref('idle')
 let controller = null
 let messageSequence = 0
+let mascotTimer = null
 
 const createMessage = (role, text = '', extra = {}) => ({ id: ++messageSequence, role, text, ...extra })
 
@@ -34,9 +36,41 @@ function addSystemMessage(text, kind = 'info', retryText = '') {
   if (!isOpen.value || isMinimized.value) hasUnread.value = true
 }
 
-function removePlaceholder(assistant) {
-  if (assistant.text || assistant.status) return
-  messages.value = messages.value.filter((item) => item.id !== assistant.id)
+function getMessage(id) {
+  return messages.value.find((item) => item.id === id)
+}
+
+function setMascotState(state, idleAfter = 0) {
+  if (mascotTimer) window.clearTimeout(mascotTimer)
+  mascotTimer = null
+  mascotState.value = state
+  if (idleAfter > 0) {
+    mascotTimer = window.setTimeout(() => {
+      mascotState.value = 'idle'
+      mascotTimer = null
+    }, idleAfter)
+  }
+}
+
+function updateAssistantMessage(id, patch) {
+  const assistant = getMessage(id)
+  if (assistant) Object.assign(assistant, patch)
+  return assistant
+}
+
+function appendAssistantText(id, text) {
+  const assistant = getMessage(id)
+  if (assistant) {
+    assistant.status = ''
+    assistant.text += text
+  }
+  return assistant
+}
+
+function removePlaceholder(id) {
+  const assistant = getMessage(id)
+  if (!assistant || assistant.text || assistant.status) return
+  messages.value = messages.value.filter((item) => item.id !== id)
 }
 
 function openAssistant() {
@@ -69,6 +103,7 @@ function resetLocalConversation() {
   input.value = ''
   conversationId.value = ''
   hasUnread.value = false
+  setMascotState('idle')
   clearAgentConversationId()
 }
 
@@ -88,10 +123,22 @@ async function sendMessage(question = input.value) {
   loading.value = true
   currentToolStatus.value = ''
   messages.value.push(createMessage('user', message))
+  setMascotState('thinking')
   const assistant = createMessage('assistant', '', { status: '' })
   messages.value.push(assistant)
+  const assistantId = assistant.id
   const activeController = new AbortController()
   controller = activeController
+
+  function finishRequest() {
+    if (controller !== activeController) return
+    controller = null
+    loading.value = false
+    currentToolStatus.value = ''
+    updateAssistantMessage(assistantId, { status: '' })
+    if (mascotState.value === 'thinking') setMascotState('idle')
+    if (mascotState.value === 'speaking') setMascotState('speaking', 2500)
+  }
 
   try {
     await streamAgentChat({
@@ -99,6 +146,7 @@ async function sendMessage(question = input.value) {
       conversationId: conversationId.value,
       signal: activeController.signal,
       onEvent(event, data) {
+        if (controller !== activeController) return
         if (event === 'conversation.started' && data?.conversation_id) {
           conversationId.value = data.conversation_id
           setAgentConversationId(data.conversation_id)
@@ -106,53 +154,55 @@ async function sendMessage(question = input.value) {
         if (event === 'tool.started') {
           const label = getAssistantToolLabel(data?.tool_name)
           currentToolStatus.value = label
-          assistant.status = label
+          updateAssistantMessage(assistantId, { status: label })
         }
         if (event === 'tool.completed' || event === 'tool.failed') {
           currentToolStatus.value = ''
-          assistant.status = ''
+          updateAssistantMessage(assistantId, { status: '' })
         }
         if (event === 'answer.delta') {
-          assistant.status = ''
-          assistant.text += String(data?.text || '')
+          appendAssistantText(assistantId, String(data?.text || ''))
+          setMascotState('speaking')
           if (!isOpen.value || isMinimized.value) hasUnread.value = true
+        }
+        if (event === 'answer.completed') {
+          finishRequest()
         }
         if (event === 'error') {
           currentToolStatus.value = ''
-          assistant.status = ''
+          updateAssistantMessage(assistantId, { status: '' })
           const safeError = toSafeError(data?.message)
           error.value = safeError
-          removePlaceholder(assistant)
+          removePlaceholder(assistantId)
           input.value = message
           addSystemMessage(safeError, 'error', message)
+          setMascotState('idle')
+          finishRequest()
         }
       }
     })
-    if (controller === activeController && !assistant.text && !error.value) {
-      removePlaceholder(assistant)
+    if (!getMessage(assistantId)?.text && !error.value) {
+      removePlaceholder(assistantId)
       addSystemMessage('暂未收到可展示的回答，请稍后重新发送。', 'warning', message)
     }
   } catch (cause) {
     if (controller !== activeController) return
     currentToolStatus.value = ''
-    assistant.status = ''
+    updateAssistantMessage(assistantId, { status: '' })
     if (cause?.name === 'AbortError') {
-      removePlaceholder(assistant)
+      removePlaceholder(assistantId)
       addSystemMessage('已停止生成。', 'info', message)
+      setMascotState('idle')
     } else {
       const safeError = toSafeError(cause?.message)
       error.value = safeError
-      removePlaceholder(assistant)
+      removePlaceholder(assistantId)
       input.value = message
       addSystemMessage(safeError, 'error', message)
+      setMascotState('idle')
     }
   } finally {
-    if (controller === activeController) {
-      controller = null
-      loading.value = false
-      currentToolStatus.value = ''
-      assistant.status = ''
-    }
+    if (controller === activeController) finishRequest()
   }
 }
 
@@ -181,6 +231,7 @@ export function useCampusAssistant() {
     conversationId,
     error,
     hasUnread,
+    mascotState,
     isLoggedIn: computed(() => useUserStore().isLoggedIn),
     serviceStatus: computed(() => loading.value ? '正在查询' : (error.value ? '校园助手暂时不可用' : '服务正常')),
     openAssistant,

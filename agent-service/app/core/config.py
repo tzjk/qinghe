@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     agent_max_request_bytes: int = Field(default=16_384, ge=1_024, le=1_048_576)
     agent_max_tool_calls: int = Field(default=2, ge=1, le=2)
 
+    # A real-model credential must be supplied through the local runtime environment.
+    # Keep source defaults offline and credential-free.
     llm_provider: str = "mock"
     llm_api_key: str = ""
     llm_base_url: str = ""

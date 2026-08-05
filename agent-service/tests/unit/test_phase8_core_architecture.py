@@ -31,6 +31,8 @@ def test_dynamic_tool_schema_selection_excludes_irrelevant_and_caps() -> None:
     selector = ToolSchemaSelector(4)
     dorm = selector.select(intent="dorm_query", tools=tools, authenticated=True)
     assert [item.name for item in dorm.tools] == ["get_my_dorm_info"]
+    assert [item.name for item in selector.select(intent="promotion_query", tools=tools, authenticated=False).tools] == ["get_today_promotions"]
+    assert [item.name for item in selector.select(intent="shop_recommendation", tools=tools, authenticated=False, recent_tool_names=("get_today_promotions",)).tools] == ["search_shops"]
     assert selector.select(intent="greeting", tools=tools, authenticated=False).tools == ()
 
 
@@ -55,6 +57,7 @@ def test_public_cache_never_keys_or_caches_private_tools() -> None:
 def test_router_profiles_and_fixed_middleware_order() -> None:
     router = ModelRouter(ModelRegistry(Settings()))
     assert router.decide(intent="greeting", expected_tool_count=0, estimated_input_tokens=1).selected_profile == "deterministic"
+    assert router.decide(intent="general_chat", expected_tool_count=0, estimated_input_tokens=1).selected_profile == "fast"
     assert router.decide(intent="promotion_query", expected_tool_count=1, estimated_input_tokens=1).selected_profile == "fast"
     assert router.decide(intent="shop_recommendation", expected_tool_count=2, estimated_input_tokens=1).selected_profile == "standard"
     assert HTTP_MIDDLEWARE_ORDER[0] == "CorsMiddleware" and AGENT_PIPELINE_ORDER[0] == "SafetyGuardMiddleware" and PROVIDER_MIDDLEWARE_ORDER[-1] == "ProviderFallbackMiddleware"

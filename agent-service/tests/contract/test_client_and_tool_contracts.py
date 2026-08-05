@@ -22,6 +22,7 @@ async def test_qinghe_client_success_and_data_null_are_parsed() -> None:
         parsed = await client.get(EndpointName.COUPONS)
         assert parsed.backend_code == 200
         assert parsed.data["records"]
+        assert parsed.java_http_duration_ms >= 0
     finally:
         await client.close()
 

@@ -12,7 +12,7 @@ class ModelRouter:
         started = time.perf_counter()
         if provider_open:
             profile, reason, latency = "fallback", "primary_provider_circuit_open", "fast"
-        elif intent in {"greeting", "help", "unsupported", "discount_query"}:
+        elif intent in {"greeting", "help", "clarification", "contextual_clarification", "discount_query"}:
             profile, reason, latency = "deterministic", "safe_or_simple_intent", "instant"
         elif expected_tool_count >= 2 or intent in {"order_detail", "shop_recommendation"}:
             profile, reason, latency = "standard", "multi_intent_or_dual_tool", "standard"

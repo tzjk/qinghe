@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.agent.intent import classify_intent
+from app.agent.intent import IntentResult, classify_intent
 from app.agent.provider_types import ProviderToolCall
 from app.agent.response_builder import AgentResult
 from app.core.config import Settings
@@ -22,6 +22,7 @@ from app.observability.usage import ModelUsageRecord
 from app.prompts.safety_prompt import SAFETY_PROMPT
 from app.prompts.system_prompt import SYSTEM_PROMPT
 from app.providers.base import BaseLLMProvider
+from app.providers.deterministic_tool_calling import DeterministicToolCallingProvider
 from app.schemas.tool import ToolCallTrace, ToolResult
 from app.tools.registry import ToolRegistry
 from app.tools.result_minimizer import minimize_for_provider
@@ -50,6 +51,7 @@ class AgentOrchestrator:
     ) -> None:
         self._settings = settings
         self._provider = provider
+        self._deterministic_provider = DeterministicToolCallingProvider()
         self._registry = registry
         self._metrics = metrics
         self._limits = limits
@@ -65,11 +67,15 @@ class AgentOrchestrator:
         message: str,
         event_sink: Callable[[str, dict[str, object]], Awaitable[None]] | None = None,
         conversation_context: ConversationContext | None = None,
+        stream_answer: bool = False,
     ) -> AgentResult:
+        request_started = time.perf_counter()
         with self._tracer.span("safety.check", request_id=(get_request_context().request_id if get_request_context() else "unknown")):
             intent = classify_intent(message)
         if not intent.safe:
             raise PROMPT_INJECTION
+        if intent.context_required:
+            intent, message = self._resolve_contextual_intent(intent, message, conversation_context)
         context = get_request_context()
         selection = self._schema_selector.select(
             intent=intent.name,
@@ -85,15 +91,32 @@ class AgentOrchestrator:
         except TokenBudgetExceeded as exc:
             raise AgentError("AGENT_TOKEN_BUDGET_EXCEEDED", str(exc), False, 413) from exc
         decision = self._model_router.decide(intent=intent.name, expected_tool_count=min(2, len(selection.tools)), estimated_input_tokens=budget.input_tokens)
+        use_remote_provider = self._provider.name == "openai_compatible"
         if event_sink:
             await event_sink("intent.detected", {"intent": intent.name})
+        provider_duration_ms = 0
         with self._tracer.span("model.route", intent=intent.name, model_profile=decision.selected_profile, input_tokens=budget.input_tokens):
-            candidates = await self._provider.select_tools(
-            intent=intent.name,
-            message=message,
-            max_tools=self._settings.agent_max_tool_calls,
-            tools=list(selection.tools),
-            )
+            selection_started = time.perf_counter()
+            if not selection.tools and use_remote_provider:
+                candidates = []
+            elif use_remote_provider and len(selection.tools) == 1:
+                # Intent and the single allow-listed schema already determine the safe tool.
+                # Avoid a separate remote model round trip solely for tool selection.
+                candidates = await self._deterministic_provider.select_tools(
+                    intent=intent.name,
+                    message=message,
+                    max_tools=self._settings.agent_max_tool_calls,
+                    tools=list(selection.tools),
+                )
+            else:
+                candidates = await self._provider.select_tools(
+                    intent=intent.name,
+                    message=message,
+                    max_tools=self._settings.agent_max_tool_calls,
+                    tools=list(selection.tools),
+                )
+            if use_remote_provider and selection.tools and len(selection.tools) != 1:
+                provider_duration_ms += int((time.perf_counter() - selection_started) * 1000)
         if not isinstance(candidates, list) or not all(
             isinstance(candidate, ProviderToolCall) for candidate in candidates
         ):
@@ -148,6 +171,7 @@ class AgentOrchestrator:
                     tool_name=candidate.name,
                     data_source=data.data_source,
                     duration_ms=duration_ms,
+                    java_http_duration_ms=data.java_http_duration_ms,
                     status="success" if data.success else "failed",
                 )
             )
@@ -161,15 +185,57 @@ class AgentOrchestrator:
                     },
                 )
 
+        first_output_ms: int | None = None
         try:
             provider_results = [minimize_for_provider(ToolResult.model_validate(value)) for value in tool_results]
             result_layers = self._layers(message, conversation_context, selection.tools, provider_results)
             result_budget = self._token_budget.plan(result_layers, context_limit=self._settings.agent_default_context_limit, max_output_tokens=self._settings.agent_max_output_tokens)
-            if self._limits is None:
-                answer = await self._provider.generate_response(intent=intent.name, message=message, tool_results=provider_results)
+            if not selection.tools and decision.selected_profile == "deterministic" and use_remote_provider:
+                answer = await self._deterministic_provider.generate_response(
+                    intent=intent.name, message=message, tool_results=provider_results, conversation_context=conversation_context
+                )
+            elif stream_answer and use_remote_provider:
+                answer_parts: list[str] = []
+                provider_started = time.perf_counter()
+                if self._limits is None:
+                    async for chunk in self._provider.stream_response(
+                        intent=intent.name, message=message, tool_results=provider_results, conversation_context=conversation_context
+                    ):
+                        if chunk:
+                            answer_parts.append(chunk)
+                            if first_output_ms is None:
+                                first_output_ms = int((time.perf_counter() - request_started) * 1000)
+                            if event_sink:
+                                await event_sink("answer.delta", {"text": chunk})
+                else:
+                    async with self._limits.model_slot():
+                        async for chunk in self._provider.stream_response(
+                            intent=intent.name, message=message, tool_results=provider_results, conversation_context=conversation_context
+                        ):
+                            if chunk:
+                                answer_parts.append(chunk)
+                                if first_output_ms is None:
+                                    first_output_ms = int((time.perf_counter() - request_started) * 1000)
+                                if event_sink:
+                                    await event_sink("answer.delta", {"text": chunk})
+                answer = "".join(answer_parts).strip()
+                provider_duration_ms += int((time.perf_counter() - provider_started) * 1000)
+                if not answer:
+                    raise AgentError("AGENT_PROVIDER_RESPONSE_INVALID", "模型返回格式异常，未使用其结果。", False, 502)
+            elif self._limits is None:
+                provider_started = time.perf_counter()
+                answer = await self._provider.generate_response(intent=intent.name, message=message, tool_results=provider_results, conversation_context=conversation_context)
+                if use_remote_provider:
+                    provider_duration_ms += int((time.perf_counter() - provider_started) * 1000)
             else:
+                provider_started = time.perf_counter()
                 async with self._limits.model_slot():
-                    answer = await self._provider.generate_response(intent=intent.name, message=message, tool_results=provider_results)
+                    answer = await self._provider.generate_response(intent=intent.name, message=message, tool_results=provider_results, conversation_context=conversation_context)
+                if use_remote_provider:
+                    provider_duration_ms += int((time.perf_counter() - provider_started) * 1000)
+            if stream_answer and event_sink and first_output_ms is None:
+                first_output_ms = int((time.perf_counter() - request_started) * 1000)
+                await event_sink("answer.delta", {"text": answer})
         except TokenBudgetExceeded as exc:
             raise AgentError("AGENT_TOKEN_BUDGET_EXCEEDED", str(exc), False, 413) from exc
         except AgentError:
@@ -189,7 +255,7 @@ class AgentOrchestrator:
         fallback_used = bool(getattr(self._provider, "used_fallback", False)) or decision.selected_profile == "fallback"
         self._metrics.record(intent=intent.name, tool_count=len(traces))
         cost = estimate_cost(usage, input_cost_per_million=profile.input_cost_per_million, output_cost_per_million=profile.output_cost_per_million, cached_input_cost_per_million=profile.cached_input_cost_per_million)
-        record = ModelUsageRecord.now(request_id=context.request_id if context else "unknown", conversation_id=context.conversation_id if context and context.conversation_id else "unknown", provider=self._provider.name, model_profile=decision.selected_profile, model=profile.model, input_tokens=usage.input_tokens, output_tokens=usage.output_tokens, cached_tokens=usage.cached_tokens, total_tokens=usage.total_tokens, estimated_cost=cost, estimated=usage.estimated, tool_count=len(traces), fallback_used=fallback_used, duration_ms=0)
+        record = ModelUsageRecord.now(request_id=context.request_id if context else "unknown", conversation_id=context.conversation_id if context and context.conversation_id else "unknown", provider=self._provider.name, model_profile=decision.selected_profile, model=profile.model, input_tokens=usage.input_tokens, output_tokens=usage.output_tokens, cached_tokens=usage.cached_tokens, total_tokens=usage.total_tokens, estimated_cost=cost, estimated=usage.estimated, tool_count=len(traces), fallback_used=fallback_used, duration_ms=provider_duration_ms)
         self._metrics.record_usage(profile=record.model_profile, usage=usage, cost=record.estimated_cost, fallback_used=record.fallback_used, cache_hit=cache_hit)
         return AgentResult(
             answer=answer,
@@ -203,7 +269,53 @@ class AgentOrchestrator:
                 for item in (ToolResult.model_validate(value) for value in tool_results)
                 if not item.success
             ],
+            shop_references=self._extract_shop_references(tool_results),
+            tool_duration_ms=sum(item.duration_ms for item in traces),
+            java_http_duration_ms=sum(item.java_http_duration_ms for item in traces),
+            provider_duration_ms=provider_duration_ms,
+            first_output_ms=first_output_ms,
         )
+
+    @staticmethod
+    def _resolve_contextual_intent(intent: IntentResult, message: str, context: ConversationContext | None) -> tuple[IntentResult, str]:
+        references = [reference for turn in reversed(context.recent_turns if context else ()) for reference in turn.shop_references]
+        if not references:
+            return IntentResult(name="clarification", safe=True), message
+        index = 1 if "第二家" in message else 0
+        if index >= len(references):
+            return IntentResult(name="clarification", safe=True), message
+        shop_id, shop_name = references[index]
+        if intent.name == "shop_goods":
+            return IntentResult(name="shop_goods", safe=True), f"{message}\n[已从最近对话解析的公开商铺：{shop_name}，id={shop_id}]"
+        return IntentResult(name="contextual_clarification", safe=True), message
+
+    @staticmethod
+    def _extract_shop_references(tool_results: list[dict[str, Any]]) -> tuple[tuple[int, str], ...]:
+        references: list[tuple[int, str]] = []
+        for value in tool_results:
+            if not value.get("success") or value.get("tool_name") not in {"search_shops", "get_shop_detail"}:
+                continue
+            data = value.get("data")
+            records = data.get("records", []) if isinstance(data, dict) else []
+            if value.get("tool_name") == "get_shop_detail" and isinstance(data, dict):
+                records = [data]
+            for item in sorted(
+                (item for item in records if isinstance(item, dict)),
+                key=AgentOrchestrator._shop_reference_rank,
+                reverse=True,
+            ):
+                shop_id, name = item.get("id"), item.get("name")
+                if isinstance(shop_id, int) and shop_id > 0 and isinstance(name, str) and name and (shop_id, name) not in references:
+                    references.append((shop_id, safe_text(name, 80)))
+        return tuple(references[:4])
+
+    @staticmethod
+    def _shop_reference_rank(item: dict[str, Any]) -> tuple[int, float]:
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            return (0, 0.0)
+        return (1, score)
 
     @staticmethod
     def _layers(message: str, context: ConversationContext | None, tools: tuple[object, ...], results: list[dict[str, Any]] | None = None) -> ContextLayers:

@@ -9,6 +9,7 @@ class ToolCallTrace(BaseModel):
     tool_name: str
     data_source: str
     duration_ms: int = Field(ge=0)
+    java_http_duration_ms: int = Field(default=0, ge=0)
     status: str
 
 
@@ -26,6 +27,7 @@ class ToolResult(BaseModel):
     backend_code: int | str | None = None
     backend_request_id: str | None = None
     duration_ms: int = Field(default=0, ge=0)
+    java_http_duration_ms: int = Field(default=0, ge=0)
     retryable: bool = False
 
 

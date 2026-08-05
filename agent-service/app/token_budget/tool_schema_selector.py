@@ -4,12 +4,12 @@ from app.schemas.tool import ToolMetadata
 
 
 _INTENT_TOOLS: dict[str, tuple[str, ...]] = {
-    "promotion_query": ("get_today_promotions", "get_active_coupons"),
+    "promotion_query": ("get_today_promotions",),
     "active_coupons": ("get_active_coupons", "get_today_promotions"),
     "coupon_wallet": ("get_my_coupon_wallet",),
-    "shop_recommendation": ("search_shops", "get_shop_detail", "get_shop_goods", "get_nearby_shops"),
+    "shop_recommendation": ("search_shops",),
     "shop_detail": ("get_shop_detail", "search_shops"),
-    "shop_goods": ("get_shop_goods", "get_shop_detail"),
+    "shop_goods": ("get_shop_goods",),
     "nearby_shop_query": ("get_nearby_shops", "search_shops"),
     "hot_explore_query": ("get_hot_explore_posts",),
     "dorm_query": ("get_my_dorm_info",),
@@ -35,11 +35,11 @@ class ToolSchemaSelector:
 
     def select(self, *, intent: str, tools: list[ToolMetadata], authenticated: bool, recent_tool_names: tuple[str, ...] = ()) -> SchemaSelection:
         wanted = _INTENT_TOOLS.get(intent, ())
-        if intent in {"greeting", "help", "unsupported", "discount_query"}:
+        if intent in {"greeting", "help", "clarification", "contextual_clarification", "general_chat", "unsupported", "discount_query"}:
             return SchemaSelection((), len(tools), tuple(item.name for item in tools), "no_tool_intent")
         by_name = {item.name: item for item in tools}
         selected: list[ToolMetadata] = []
-        for name in wanted + recent_tool_names:
+        for name in wanted or recent_tool_names:
             item = by_name.get(name)
             if item and (authenticated or not item.requires_auth) and item not in selected:
                 selected.append(item)

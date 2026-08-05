@@ -1,9 +1,11 @@
 """Provider-layer decorators; none depends on FastAPI routes."""
 import asyncio
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 from app.agent.provider_types import ProviderToolCall
+from app.conversation import ConversationContext
 from app.core.config import Settings
 from app.core.errors import AgentError
 from app.model_routing.health import CircuitState, ProviderHealth
@@ -64,12 +66,16 @@ class ProviderUsageCaptureMiddleware(BaseLLMProvider):
         self._breaker = ProviderCircuitBreakerMiddleware(settings)
         self._retry = ProviderRetryMiddleware(0)  # OpenAI adapter already owns its protocol retry.
         self.last_usage: dict[str, int] | None = None
+        self.last_duration_ms = 0
+        self.last_first_chunk_ms: int | None = None
 
     async def _run(self, call):
         self._breaker.before_call()
         try:
             result = await self._retry.run(call)
             self.last_usage = getattr(self._primary, "last_usage", None)
+            self.last_duration_ms = getattr(self._primary, "last_duration_ms", 0)
+            self.last_first_chunk_ms = getattr(self._primary, "last_first_chunk_ms", None)
             self._breaker.success()
             return result
         except AgentError as error:
@@ -79,8 +85,21 @@ class ProviderUsageCaptureMiddleware(BaseLLMProvider):
     async def select_tools(self, *, intent: str, message: str, max_tools: int, tools: list[ToolMetadata]) -> list[ProviderToolCall]:
         return await self._run(lambda: self._primary.select_tools(intent=intent, message=message, max_tools=max_tools, tools=tools))
 
-    async def generate_response(self, *, intent: str, message: str, tool_results: list[dict[str, Any]]) -> str:
-        return await self._run(lambda: self._primary.generate_response(intent=intent, message=message, tool_results=tool_results))
+    async def generate_response(self, *, intent: str, message: str, tool_results: list[dict[str, Any]], conversation_context: ConversationContext | None = None) -> str:
+        return await self._run(lambda: self._primary.generate_response(intent=intent, message=message, tool_results=tool_results, conversation_context=conversation_context))
+
+    async def stream_response(self, *, intent: str, message: str, tool_results: list[dict[str, Any]], conversation_context: ConversationContext | None = None) -> AsyncIterator[str]:
+        self._breaker.before_call()
+        try:
+            async for chunk in self._primary.stream_response(intent=intent, message=message, tool_results=tool_results, conversation_context=conversation_context):
+                yield chunk
+            self.last_usage = getattr(self._primary, "last_usage", None)
+            self.last_duration_ms = getattr(self._primary, "last_duration_ms", 0)
+            self.last_first_chunk_ms = getattr(self._primary, "last_first_chunk_ms", None)
+            self._breaker.success()
+        except AgentError as error:
+            self._breaker.failure(error)
+            raise
 
     async def health_check(self) -> bool:
         return await self._primary.health_check()

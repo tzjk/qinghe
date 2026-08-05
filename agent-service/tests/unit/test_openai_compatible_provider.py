@@ -42,6 +42,19 @@ async def test_text_response_uses_only_model_key_header() -> None:
     assert "user-token" not in observed["body"]
 
 
+async def test_general_chat_does_not_append_an_empty_tool_result_message() -> None:
+    observed = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed["messages"] = json.loads(request.content)["messages"]
+        return response({"content": "先休息十分钟，再从最小的一项开始。"})
+
+    provider = OpenAICompatibleProvider(settings(), transport=transport(handler))
+    assert await provider.generate_response(intent="general_chat", message="学习有点累", tool_results=[])
+    assert observed["messages"][-1]["content"] == "学习有点累"
+    assert all("已验证工具结果" not in item["content"] for item in observed["messages"])
+
+
 async def test_single_and_double_tool_calls_are_parsed_and_capped() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return response({"tool_calls": [
@@ -106,8 +119,16 @@ async def test_timeout_is_retried_without_network() -> None:
 
 async def test_streaming_response_and_midstream_failure() -> None:
     stream = 'data: {"choices":[{"delta":{"content":"青禾"}}]}\n\ndata: {"choices":[{"delta":{"content":"助手"}}]}\n\ndata: [DONE]\n\n'.encode("utf-8")
-    provider = OpenAICompatibleProvider(settings(), transport=transport(lambda _request: httpx.Response(200, content=stream)))
+    observed = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed["stream"] = json.loads(request.content)["stream"]
+        return httpx.Response(200, content=stream)
+
+    provider = OpenAICompatibleProvider(settings(), transport=transport(handler))
     assert [part async for part in provider.stream_response(intent="x", message="x", tool_results=[])] == ["青禾", "助手"]
+    assert observed["stream"] is True
+    assert provider.last_first_chunk_ms is not None and provider.last_duration_ms >= provider.last_first_chunk_ms
     broken = OpenAICompatibleProvider(settings(), transport=transport(lambda _request: httpx.Response(200, content=b'data: {bad}\n\n')))
     with pytest.raises(AgentError):
         async for _ in broken.stream_response(intent="x", message="x", tool_results=[]):

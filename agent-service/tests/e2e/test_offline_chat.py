@@ -28,6 +28,14 @@ async def test_active_coupons_and_shop_goods_complete_offline_chain(client, fake
     assert fake_backend.requests[-1].url.path == "/api/shops/1/goods"
 
 
+async def test_coupon_claim_remains_blocked_while_available_coupon_query_is_read_only(client, fake_backend) -> None:
+    query = await ask(client, "现在有哪些可领取优惠券？")
+    claim = await ask(client, "帮我领取优惠券")
+    assert query.status_code == 200 and query.json()["tool_calls"][0]["tool_name"] == "get_active_coupons"
+    assert claim.status_code == 400 and claim.json()["error"]["code"] == "AGENT_PROMPT_INJECTION_BLOCKED"
+    assert len(fake_backend.requests) == 1
+
+
 async def test_shop_recommendation_uses_supported_keyword_only(client) -> None:
     response = await ask(client, "推荐一家适合晚饭的商铺")
     assert response.status_code == 200

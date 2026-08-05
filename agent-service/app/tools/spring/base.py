@@ -51,6 +51,7 @@ class SpringReadTool(BaseTool):
                 backend_code=response.backend_code,
                 backend_request_id=response.backend_request_id,
                 duration_ms=int((time.perf_counter() - started) * 1000),
+                java_http_duration_ms=response.java_http_duration_ms,
             )
         except AgentError as error:
             return ToolResult(

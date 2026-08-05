@@ -10,6 +10,7 @@ class ParsedBackendResponse:
     data: Any
     backend_code: int | str | None
     backend_request_id: str | None
+    java_http_duration_ms: int = 0
 
 
 def parse_backend_response(*, status_code: int, payload: Any, request_id: str | None) -> ParsedBackendResponse:

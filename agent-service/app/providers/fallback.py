@@ -1,6 +1,8 @@
+from collections.abc import AsyncIterator
 from typing import Any
 
 from app.agent.provider_types import ProviderToolCall
+from app.conversation import ConversationContext
 from app.core.errors import AgentError
 from app.providers.base import BaseLLMProvider
 from app.schemas.tool import ToolMetadata
@@ -24,14 +26,25 @@ class FallbackProvider(BaseLLMProvider):
             self.used_fallback = True
             return await self._fallback.select_tools(intent=intent, message=message, max_tools=max_tools, tools=tools)
 
-    async def generate_response(self, *, intent: str, message: str, tool_results: list[dict[str, Any]]) -> str:
+    async def generate_response(self, *, intent: str, message: str, tool_results: list[dict[str, Any]], conversation_context: ConversationContext | None = None) -> str:
         try:
-            return await self._primary.generate_response(intent=intent, message=message, tool_results=tool_results)
+            return await self._primary.generate_response(intent=intent, message=message, tool_results=tool_results, conversation_context=conversation_context)
         except AgentError as error:
             if not error.retryable:
                 raise
             self.used_fallback = True
-            return await self._fallback.generate_response(intent=intent, message=message, tool_results=tool_results)
+            return await self._fallback.generate_response(intent=intent, message=message, tool_results=tool_results, conversation_context=conversation_context)
+
+    async def stream_response(self, *, intent: str, message: str, tool_results: list[dict[str, Any]], conversation_context: ConversationContext | None = None) -> AsyncIterator[str]:
+        try:
+            async for chunk in self._primary.stream_response(intent=intent, message=message, tool_results=tool_results, conversation_context=conversation_context):
+                yield chunk
+        except AgentError as error:
+            if not error.retryable:
+                raise
+            self.used_fallback = True
+            async for chunk in self._fallback.stream_response(intent=intent, message=message, tool_results=tool_results, conversation_context=conversation_context):
+                yield chunk
 
     async def health_check(self) -> bool:
         return await self._primary.health_check() or await self._fallback.health_check()

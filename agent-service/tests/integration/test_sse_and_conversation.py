@@ -8,6 +8,13 @@ def sse_events(text: str) -> list[str]:
     return [part.split("\n", 1)[0].removeprefix("event: ") for part in text.strip().split("\n\n")]
 
 
+def sse_payload(text: str, event_name: str) -> dict:
+    for block in text.strip().split("\n\n"):
+        if block.startswith(f"event: {event_name}\n"):
+            return json.loads(block.split("\ndata: ", 1)[1])
+    raise AssertionError(f"missing SSE event: {event_name}")
+
+
 async def test_sse_event_order_and_safe_metadata(client) -> None:
     response = await client.post("/api/v1/chat/stream", json={"message": "今天有什么优惠？", "conversation_id": "stream_01"})
     assert response.status_code == 200
@@ -15,6 +22,10 @@ async def test_sse_event_order_and_safe_metadata(client) -> None:
     assert events[0] == "conversation.started"
     assert events.index("intent.detected") < events.index("tool.started") < events.index("tool.completed") < events.index("answer.delta") < events.index("answer.completed")
     assert "test-token-not-real" not in response.text
+    timing = sse_payload(response.text, "answer.completed")["timing"]
+    assert set(timing) == {"total_duration_ms", "tool_duration_ms", "java_http_duration_ms", "provider_duration_ms", "first_output_ms"}
+    assert timing["total_duration_ms"] >= timing["tool_duration_ms"] >= timing["java_http_duration_ms"]
+    assert timing["first_output_ms"] is not None
 
 
 async def test_sse_errors_are_structured(client) -> None:

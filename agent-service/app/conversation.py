@@ -13,6 +13,7 @@ class ConversationTurn:
     answer_summary: str
     intent: str
     tool_names: tuple[str, ...]
+    shop_references: tuple[tuple[int, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +68,7 @@ class InMemoryConversationStore:
             answer_summary=_safe_turn_text(turn.answer_summary),
             intent=turn.intent,
             tool_names=turn.tool_names,
+            shop_references=tuple((shop_id, _safe_turn_text(name)) for shop_id, name in turn.shop_references if shop_id > 0 and name),
         )
         record = self._items.setdefault(conversation_id, _ConversationRecord())
         record.turns.append(turn)
@@ -112,7 +114,8 @@ class _ConversationRecord:
 
 def _append_summary(existing: str, turn: ConversationTurn) -> str:
     tools = "、".join(turn.tool_names) if turn.tool_names else "无工具"
-    item = f"意图={turn.intent};工具={tools};结果={turn.answer_summary[:96]}"
+    shops = "、".join(name for _, name in turn.shop_references) if turn.shop_references else "无"
+    item = f"意图={turn.intent};工具={tools};商铺={shops};结果={turn.answer_summary[:96]}"
     return (existing + " | " + item).strip(" | ")[-800:]
 
 

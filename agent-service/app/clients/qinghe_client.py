@@ -59,6 +59,7 @@ class QingheClient:
             raise AUTH_REQUIRED
         headers = {"Authorization": f"Bearer {authorization_token}"} if authorization_token else {}
         retries = self._settings.qinghe_max_retries
+        java_http_duration_ms = 0
         for attempt in range(retries + 1):
             started = time.perf_counter()
             try:
@@ -71,7 +72,12 @@ class QingheClient:
                     payload=payload,
                     request_id=response.headers.get("X-Request-ID"),
                 )
-                return parsed
+                return ParsedBackendResponse(
+                    data=parsed.data,
+                    backend_code=parsed.backend_code,
+                    backend_request_id=parsed.backend_request_id,
+                    java_http_duration_ms=java_http_duration_ms + int((time.perf_counter() - started) * 1000),
+                )
             except (httpx.TimeoutException, httpx.ConnectError) as exc:
                 if attempt < retries:
                     await asyncio.sleep(0)
@@ -82,4 +88,4 @@ class QingheClient:
             except ValueError as exc:
                 raise AgentError("AGENT_BACKEND_RESPONSE_INVALID", "后端返回格式异常。", True, 502) from exc
             finally:
-                _ = int((time.perf_counter() - started) * 1000)
+                java_http_duration_ms += int((time.perf_counter() - started) * 1000)
