@@ -20,12 +20,17 @@
         <java.version>1.8</java.version>
         <maven.compiler.release>8</maven.compiler.release>
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
+        <redisson.version>3.27.2</redisson.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -42,6 +47,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson</artifactId>
+            <version>${redisson.version}</version>
         </dependency>
         <dependency>
             <groupId>com.aliyun.oss</groupId>
@@ -95,4 +105,19 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>real-social-tests</id>
+            <activation>
+                <property>
+                    <name>env.QINGHE_REAL_SOCIAL_TESTS</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <qinghe.real.social.tests>true</qinghe.real.social.tests>
+            </properties>
+        </profile>
+    </profiles>
 </project>

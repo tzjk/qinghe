@@ -58,12 +58,12 @@ public class HomeServiceImpl implements HomeService {
                 .stream().map(GoodsVO::fromGoods).collect(Collectors.toList()));
         LocalDateTime now = LocalDateTime.now();
         summary.setAvailableCoupons(couponMapper.selectList(Wrappers.<Coupon>lambdaQuery()
-                        .eq(Coupon::getCouponStatus, "PUBLISHED")
-                        .le(Coupon::getStartTime, now)
-                        .ge(Coupon::getEndTime, now)
-                        .apply("total_stock > claimed_count")
+                        .eq(Coupon::getStatus, "ENABLED")
+                        .le(Coupon::getReceiveStartTime, now)
+                        .ge(Coupon::getReceiveEndTime, now)
+                        .gt(Coupon::getAvailableStock, 0)
                         .last("LIMIT 6"))
-                .stream().map(CouponVO::fromCoupon).collect(Collectors.toList()));
+                .stream().map(CouponVO::from).collect(Collectors.toList()));
         summary.setFeaturedBlogs(blogMapper.selectList(Wrappers.<Blog>lambdaQuery()
                         .eq(Blog::getBlogStatus, "PUBLISHED")
                         .orderByDesc(Blog::getLikeCount)

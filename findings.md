@@ -1,5 +1,44 @@
 # 活动发现
 
+## 2026-07-25 管理员营业报表：启动基线
+
+- 分支与工作区已按本轮用户要求一次性核对：`feature/business-report`、干净。后续 Git 命令仅保留给最终收口步骤。
+- 统计口径已经在 `task_plan.md` 固化：有效营业状态为 `PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`；金额语义为 `total_amount` 原价、`pay_amount` 实付，优惠为两者之差；使用 `Asia/Shanghai` 的左闭右开自然日边界。
+- 日报方案尚未决定；先审计现有字段、索引和规模证据，默认候选为 Mapper 层 MySQL 实时聚合，不新增快照表或缓存。
+
+## 2026-07-25 管理员营业报表：结论
+
+- 选择实时 MySQL 聚合：报表是限定 90 天的读操作，已有订单明细、店铺和商品关联字段足以完成 `SUM/COUNT/GROUP BY`；当前没有需要日报快照或缓存的规模/性能证据。
+- 严格 MySQL `only_full_group_by` 要求趋势 SELECT、GROUP BY、ORDER BY 使用同一 `DATE_FORMAT(create_time, '%Y-%m-%d')` 表达式/别名；最终 SQL 已兼容并经专项集成测试验证。
+- 有效营业状态固定为 `PAID/ACCEPTED/DELIVERING/COMPLETED`。店铺销售额为订单 `pay_amount` 合计，商品销售额为订单明细 `subtotal` 合计；优惠额固定按需求使用 `total_amount - pay_amount`。趋势空日期由 Service 补零。
+- 现有设计登记 `qh_order_item.order_id`、商品和店铺关联索引；日期状态聚合与用户券订单核销查询的候选人工索引记录在 `docs/business-report-design.md`。未生成/执行 SQL，实际建索引前须先核对等价索引和 `EXPLAIN`。
+
+## 2026-07-24 优惠券基础业务与普通订单使用：实施/验证阻断
+
+- 已生成未执行候选 `backend/src/main/resources/sql/coupon_foundation_increment.sql` 并将领域模型切换为本轮字段与集中状态枚举；脚本保留旧字段和 `(user_id,coupon_id)` 唯一索引，未删除/重命名列或自动导入 SQL。
+- 已实现 `CouponServiceImpl` 的普通领取、用户券查询/延迟过期、订单锁定、支付核销和取消释放；`OrderServiceImpl` 仅从 `OrderCreateDTO.userCouponId` 读取券编号，金额仍在服务端计算。`OrderCancellationService` 在订单条件取消、库存恢复后于同一事务释放该订单锁券。
+- 管理员通过 `AdminCouponServiceImpl` 和 `AdminContext` 新建、编辑未开始券、启停及读取领取/使用统计；Controller 写操作使用现有 `@OperateLog`，未新增日志表。
+- 本轮指定 Maven 命令只执行一次，失败于 `Could not create local repository at Q:\.m2: Access is denied`，没有编译、Surefire 或测试计数。后端 package 因专项未通过未运行。
+- 前端生产构建执行一次后失败于 esbuild 受限读取 `../../../../..`，无法解析工作区 `vite.config.js`；这是环境文件访问证据，不是前端业务断言或构建成功。
+- 完整 `CouponOrderIntegrationTest` 尚未添加；在实库候选迁移未手工执行且 Maven 测试运行环境不可用时，不能伪造 18 项测试覆盖或称本轮完成。
+
+## 2026-07-24 优惠券基础业务与普通订单使用：阶段 1 审计
+
+- 基线：一次授权 Git 检查确认当前为 `feature/coupon-foundation`，工作区干净。
+- 实库只读核查：`qh_coupon` 当前为 `id/name/coupon_type/discount_amount/threshold_amount/total_stock/claimed_count/coupon_status/start_time/end_time/create_time/update_time`；`qh_user_coupon` 当前为 `id/user_id/coupon_id/order_id/coupon_status/claim_time/use_time/create_time/update_time`，唯一索引为 `(user_id,coupon_id)`。
+- 因此实库尚缺本轮状态/时间/库存语义：券缺 `available_stock/receive_start_time/receive_end_time/use_start_time/use_end_time/shop_id/per_user_limit/status`，用户券缺 `status/receive_time/lock_time/expire_time`。按约束只能生成候选人工增量 SQL，不能执行、删除或重命名旧列。
+- 旧唯一索引只允许同一用户持有同一优惠券一张；本轮普通券服务将要求 `perUserLimit=1`，并让该唯一约束作为重复提交最终兜底。
+- 现有订单创建已经服务端重算总额、优惠额、配送费和实付；支付采用 `id + user_id + PENDING_PAY + pay_expire_time` 条件更新，取消内核先条件取消再恢复库存/写统一日志。优惠券锁定、核销和释放应嵌入这些同一业务事务。
+
+## 2026-07-24 订单超时取消与多实例任务锁：静态门禁
+
+- 当前分支与干净工作区已在本轮唯一的开始检查中确认：`feature/order-timeout-lock`。
+- `Order` 已映射 `payExpireTime`、`cancelTime`、`cancelReason` 与 `status`；候选迁移 `backend/src/main/resources/sql/order_lifecycle_schema_increment.sql` 提供 `(status, pay_expire_time)` 索引，但本轮不执行 SQL。
+- 现有 `cancelPendingOrder` 已复用订单明细库存恢复和直接 `qh_operate_log` 写入；超时路径仍缺少 `pay_expire_time <= now` 的条件更新、每笔独立事务和可配置批量。
+- 现有 `OrderPaymentTimeoutTask` 仅硬编码 cron 并直接触发 Service；项目尚无 Redisson 依赖或客户端配置。
+- 模拟支付已使用 `PENDING_PAY` 条件更新，但需要把支付截止时间也加入原子更新，才能与超时取消共享最终并发保障。
+- 实现与专项验证完成：`OrderCancellationService` 是用户/超时取消共用的资源释放内核；`OrderTimeoutCancelService` 逐批扫描并通过跨 Bean 调用确保每笔 `REQUIRED` 事务。指定订单测试为 20/0/0/0，真实 Redis/Redisson 锁测试已执行；跳过测试打包成功。
+
 ## 2026-07-19 学籍异动、批量毕业与二维码批量管理：实施前恢复
 
 - 本轮实施以 `docs/academic-dorm-batch-audit.md` 为业务设计依据，但现有代码、实体、Mapper、测试和本轮命令输出仍是最终事实来源；此前审计不是实施或验证完成的证据。
@@ -497,6 +536,12 @@
 - 当前 Redis 只使用 Spring Data Redis 与 `StringRedisTemplate`；Key 已统一以 `qh:` 开头，已定义登录、管理员会话和商铺详情/空值/互斥 Key。仓库未见 Redisson、Redis Stream、RabbitMQ、Kafka 或其依赖/消费者实现。
 - 商铺详情已有 Cache Aside、空值缓存、随机 TTL、有限互斥重建和 Redis 异常回源。现有 `setIfAbsent` 锁使用固定值并直接删除锁 Key，缺少令牌所有者校验；该实现只能作为后续热点缓存整改对象，不能扩展为普通订单或库存正确性方案。
 
+## 2026-07-24 店铺与商品 Redis 热点缓存：最终发现
+
+- 旧店铺缓存仅覆盖详情，且采用非所有者安全的字符串锁、散落 TTL 和独立空值 Key；已收敛为复用现有 `StringRedisTemplate`、`ObjectMapper`、`RedissonClient` 的轻量 `CatalogCache`。
+- 缓存范围是店铺详情、商品详情和店铺上架商品目录；商品库存/销量逐次回源 MySQL，不以 Redis 实时扣减库存。
+- 事务提交后失效包含商品换店的新旧列表及店铺状态对本店商品详情的影响。测试使用 `CATALOG_CACHE_TEST_` 数据前缀并只删除相应 `qh:cache:*`/`qh:lock:cache:*` Key。
+
 - 迁移决策：普通订单补齐快照、配送费、状态时间和用户券唯一关联；普通券补齐范围、领取/使用窗口与用户券审计字段。因既有 `(user_id,coupon_id)` 唯一约束无法仅靠 ADD 操作放宽，本轮明确第一版每人限领 1 张。
 - 秒杀决策：使用独立 `qh_seckill_coupon_activity` 和 `qh_seckill_coupon_order`，以 `(activity_id,user_id)` 和 `stream_message_id` 唯一约束防重复；活动只能绑定专用券。Redis Lua 负责受理，数据库条件库存更新、唯一约束和事务负责最终正确性。
 - 过程错误：一次文件清单命令误用了 Bash 花括号，在 PowerShell 参数解析阶段失败，未读写项目文件；已改为显式目录参数，未重复该写法。
@@ -667,3 +712,158 @@
 - 已在两条写入路径增加 `(building_id, room_no)` 的 MyBatis-Plus 主动查重，排除编辑目标自身；冲突使用 `BusinessException(409, ...)`，确保 HTTP 409 与既有专项测试一致。数据库重复键捕获同样改为 409 兜底。
 - 专项测试编译成功，但运行在测试清理阶段因 Redis `192.168.100.128:6379` 连接超时而 2 errors，未触发业务断言；需在可访问 Redis 的本机执行同一专项复核。
 - 本地历史快照为 `dd7149e fix: enforce dorm room number uniqueness`；快照未包含用户已有 `.gitignore` 修改。
+
+## 2026-07-23 订单生命周期状态模型与候选迁移
+
+- 已新增 `OrderStatus`：`PENDING_PAY`、`PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`、`CANCELLED`，提供编码、中文名称、编码解析和合法流转判断。订单创建和专项断言均改用 `OrderStatus.PENDING_PAY.getCode()`；未新增任何状态变更接口。
+- 新候选脚本 `order_lifecycle_schema_increment.sql` 仅提出 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 和 `(status, pay_expire_time)`；静态核对确认既有 `order_core_increment.sql` 已定义 `cancel_reason`、`cancel_time`、`completed_time`，新脚本不重复添加。脚本要求先用 DataGrip 运行 `SHOW CREATE TABLE qh_order;` 与 `SHOW INDEX FROM qh_order;`，本轮没有执行 SQL。
+- 当前会话 `Q:\backend`、`Q:\.m2` 均不存在，用户指定的 compile 与 `OrderCreateIntegrationTest` 命令无法开始。未创建路径映射、未调整 Maven/Redis 配置，也未用其他命令冒充指定验证结果。
+- 后续取消订单的设计固定为“条件状态更新、库存恢复、成功日志”同处 `REQUIRED` 订单事务，直接写现有 `qh_operate_log`，并避免 `REQUIRES_NEW` 通用 AOP 成功日志重复写入。
+
+## 2026-07-24 订单生命周期实现与验证
+
+- 只读 `information_schema` 已确认候选生命周期列和超时索引都实际存在，因此 `Order` 安全映射时间/取消字段；候选迁移脚本未执行。
+- 取消实现先执行 `id + status`（用户请求另加 `user_id`）条件更新，成功后才恢复每个 `qh_order_item` 对应库存并在同一业务事务直接写一条 `qh_operate_log`；通用 `@OperateLog` 未标注这些关键端点，避免其 `REQUIRES_NEW` 成功日志重复记录。
+- 支付、取消和超时扫描共享同一待支付状态竞争边界；管理员状态机只暴露三个固定操作。订单/明细列表以订单分页、批量店铺/用户读取和自定义批量明细 Mapper 组装，未产生逐订单查询。
+- 首次专项运行暴露测试订单号超列长度及先前失败导致的孤立测试订单；均只修正测试夹具与精确清理锚点。最终专项 13/0/0/0，前缀数据残留为 0；后端打包与前端构建均通过。
+# 2026-07-24 Coupon duplicate-claim audit
+
+- `CouponServiceImpl.claim` is transactional and obtains identity only from `UserContext`; existing `(user_id,coupon_id)` is returned before decrement/insert, but `UserCouponVO` does not distinguish the first and duplicate claim.
+- `CouponVO` and `pageAvailable` have no per-user claim fields. One bulk `qh_user_coupon` query for coupon IDs in the current page can map state without N+1.
+- `uk_qh_user_coupon(user_id,coupon_id)` is the persistence backstop for one-person-one-coupon. Retain the conditional decrement and transaction behavior under concurrency.
+- `CouponsView.vue` only marks an in-flight request; it does not disable claimed coupons, update the card immediately, or give a specific retry message.
+
+## 2026-07-24 Coupon duplicate-claim final findings
+
+- The duplicate response is a normal 200 business result (`ALREADY_CLAIMED`), never a 500. The front end branches on `claimStatus`, not the Chinese message.
+- The refreshed-list test proves `AVAILABLE`, `LOCKED`, `USED`, and `EXPIRED` user coupons all return `claimed=true` and cannot be claimed again.
+- The concurrent-claim test proves one user-coupon row and one stock decrement remain after two simultaneous calls; the persistence unique key and conditional decrement stay in force.
+- Git push evidence: `git push origin feature/coupon-foundation` failed before remote contact because the configured local proxy at `127.0.0.1` refused the GitHub HTTPS connection. The local commit remains available for a later normal push.
+# 2026-07-24 Coupon seckill stream milestone
+
+- Start gate: `feature/coupon-seckill-stream` is current and clean (`git status -sb` and `git branch --show-current` executed once as requested).
+- Scope is limited to coupon entities/mappers/services/controllers, `qh_coupon` and `qh_user_coupon`, Redis/Redisson configuration, Maven/application configuration, the coupon Redis design, and the two coupon-focused integration tests.
+- Existing source inventory includes `backend/src/main/resources/sql/seckill_coupon_increment.sql`; it is a candidate only until schema verification confirms whether a manual index review is necessary. It will not be imported or executed.
+- Live read-only MySQL verification confirmed `qh_user_coupon.uk_qh_user_coupon (user_id, coupon_id)` exists. No unique-index candidate SQL is required. `qh_coupon` has `available_stock`, receiving windows, and `status`, but no dedicated activity column; the existing `coupon_status` field is the smallest non-migration activity marker for this milestone (`SECKILL` only).
+- The legacy `seckill_coupon_increment.sql` proposes separate activity/order tables, which conflicts with this milestone's required final persistence in `qh_coupon` and `qh_user_coupon`; it remains untouched and will not be used.
+- Redis and Redisson dependencies/configuration already exist. Scheduling is enabled and the existing Redisson lock pattern is reserved for scheduled work, not a claim request.
+- Verification blocker: the user-mandated Maven command could not create `Q:\.m2` and exited before compilation with `Access is denied`. Per scope, no alternate repository path, configuration mutation, fake Redis test, SQL execution, commit, or push was attempted.
+
+## 2026-07-24 Seckill consumer-group API compatibility
+
+- The source used `StreamOperations.create(streamKey, ReadOffset.from("0-0"), groupName)`, which does not exist in the Spring Data Redis 2.7.18 API selected by Spring Boot 2.7.18.
+- `StreamOperations.createGroup(streamKey, ReadOffset.from("0-0"), groupName)` is available, but it cannot request Redis `MKSTREAM`; `RedisStreamCommands.xGroupCreate(key, group, ReadOffset.from("0-0"), true)` is the smallest compatible command path for creating an empty stream and its group without adding a synthetic claim message.
+- The follow-up must treat only a Redis `BUSYGROUP` response as idempotent success. Connection, authorization, and all other command failures remain observable exceptions.
+- Main-source verification succeeded: `mvn -DskipTests compile` compiled all 236 main sources after the change. The Maven warning reports unchecked operations in `CouponSeckillServiceImpl` without a source location; no raw type is introduced by the small `RedisCallback<String>` call, so no broad warning-only refactor was made.
+- The requested focused test command was retried after successful main compilation, but `testCompile` failed before either target test ran: all integration tests report their `com.qinghe.life.*` imports as missing while `target/classes` contains and `javap` resolves `com.qinghe.life.entity.Coupon`. A read-only Maven diagnostic also hit `AccessDeniedException` creating a tracking directory under `D:\maven\apache-maven-3.9.11\Repository`. These failures are not caused by, or safely repairable within, the seckill coupon scope.
+# 2026-07-24 — Order WebSocket notification milestone
+
+- Scope is authenticated user/admin order notifications only. Existing order state transitions and database schema must remain unchanged.
+- The notification transport is advisory: HTTP order queries remain the source of truth after refresh or reconnect.
+- Existing transaction boundaries are `OrderServiceImpl#create`, `simulatePay`, the three administrator transitions, and `OrderCancellationService` for user/timeout cancellation. An application event plus `@TransactionalEventListener(AFTER_COMMIT)` can cover every successful path without changing state rules.
+- User authentication is a Redis hash at `qh:login:token:{token}` and administrator authentication is a Redis hash at `qh:admin:token:{token}`. Native browser WebSocket cannot set `Authorization`; the chosen fixed-path handshake carries the existing token in `Sec-WebSocket-Protocol`, never in a URL.
+- Axios keeps user and administrator tokens separately in localStorage. The order pages currently reload via HTTP after local operations, so WebSocket handling can do idempotent in-memory updates and still rely on HTTP on first load/reconnect.
+- Focused Maven verification passed 31/0/0/0: new `OrderWebSocketIntegrationTest` is 16/0/0/0 and existing lifecycle/timeout tests complete the requested run. Backend package and frontend production build also passed.
+- The first frontend build was blocked by sandboxed esbuild file reads; the single controlled real-path retry built 1742 modules successfully. Vite reported only existing third-party PURE-comment and bundle-size warnings.
+
+## 2026-07-26 V1.0 release closure start
+
+- Release work is restricted to verification, documentation, deployment material, audits, and demonstrated defect fixes on `chore/release-v1.0`; no new business domain, automatic migration, service control, or global test-data cleanup is allowed.
+- Current verification must supersede historical evidence. The specified Maven repository is `C:/Users/28402/.m2/repository`; full regression must be rerun and pass with zero failures and zero errors before release closeout.
+
+## 2026-07-26 Full regression finding: duplicate dorm-room response contract
+
+- The `DormAssetServiceImpl.createRoom` path already calls `ensureRoomNoUnique(buildingId, roomNo, null)` and returns `BusinessException(409, ...)`; a duplicate key remains a persistence fallback. The database candidate DDL also declares `uk_qh_dorm_room_building_room (building_id, room_no)`.
+- `backend/API.md` and `docs/api-contract.md` define `BusinessException` as preserving the normal HTTP response transport while returning the business code in `Result`. Other integration tests intentionally assert `status().isOk()` with `code=409`; therefore the original `DormAssetIntegrationTest` HTTP-409 expectation contradicted the API contract.
+- The release fix retains the duplicate-room assertion, asserts `Result.code=409`, and adds a direct exact-count assertion so the test still proves no duplicate room row is created. A fresh full regression is required next.
+
+## 2026-07-26 Security configuration gate
+
+- `application.yml` had non-empty defaults for both `MYSQL_PASSWORD` and `REDIS_PASSWORD`; they were removed so secrets must come from the launch environment. Deployment documentation now records only variable names.
+- The previous green full regression was `147/0/0/0` before this security change. The required post-change run cannot authenticate to Redis database 2 and ended with `125 errors` (`RedisAuthRequiredException: NOAUTH Authentication required`). This is an external secret-injection blocker, not a reason to restore a committed default password.
+- No automatic configuration, SQL, Redis, service, Git, or credential action is permitted to resolve this blocker. After the user supplies secrets through the approved launch environment, rerun the exact Maven test, package, frontend build if needed, then final Git closeout.
+# 2026-07-26 探店与附近店铺：审计起点
+
+- 基线：`feature/explore-discovery`，工作区干净。用户授权本轮最终至多两个提交与一次普通推送；中途不提交、不推送、不创建分支。
+- 已发现既有店铺、用户、OSS 上传、地址、Redis/Redisson、营业报表与后台页实现可作为后续限定审计对象；探店具体页面/API/数据模型仍待逐项读取后再决定最小修改集合。
+- 当前用户端 `BlogsView.vue` 仅有“探店内容、互动与评论的页面骨架”占位；路由为 `/blogs`。后台 `/admin/blogs` 与 `/admin/comments` 都仍指向通用占位页面，后台首页也只有店铺管理入口。
+- 审计中一次按推断命名读取 `frontend/src/api/admin-business-report.js` 失败（文件不存在）。后续先使用文件清单定位实际 API 文件名，不重复同一路径。
+- 本轮首次后端编译被外部本地 Maven 仓库读取权限阻断：`C:/Users/28402/.m2/repository/com/fasterxml/jackson/datatype/jackson-datatype-jsr310/2.13.5/jackson-datatype-jsr310-2.13.5.jar` 返回 `Access is denied`。构建尚未到 Java 错误输出；后续不会原样重复该失败命令，而会在实现后做受控诊断并如实报告。
+- 受控编译暴露并修复了 Spring Data Redis GEO 结果类型的包名差异；后端主源码现在可编译。完整测试的第二次运行被 124 秒上限中断，现有本轮 XML 中 Address、管理员认证、宿舍楼和入住集成测试出现 Redis 启动错误，故没有全量绿色结论。
+
+# 2026-07-27 探店专项测试设计
+
+- 复用真实 Redis/MySQL 的现有集成测试基线：Redis 登录会话以 `qh:login:token:{token}` Hash 的 `id` 字段建立；管理员会话以 `qh:admin:token:{token}` 建立。每个测试类使用独立 marker，并精确删除自身用户、店铺、探店记录、互动记录和两个探店 Redis Key。
+- 为验证真实 Redis 异常回退，临时将本轮唯一 `qh:zset:explore:hot` 或 `qh:geo:shop` 写为字符串，令对应 ZSet/GEO 命令产生真实 `WRONGTYPE`；随后精确删除该 Key。此方法不 Mock Redis、不更改服务或配置。
+- 专项命令的第一条业务执行前错误为 Redisson 创建连接到 Redis database 2 时收到 `NOAUTH Authentication required`。三组测试均未完成 Spring 上下文启动，因而没有执行探店发布、互动、热门或附近店铺断言；不得将这 10 个 errors 解释为探店逻辑失败。
+
+# 2026-07-27 ShopServiceImpl 构造器审计
+
+- 构造器问题已由两个有参构造器引起：一个 9 参数生产构造器和一个 8 参数测试兼容构造器均无 `@Autowired`。现已收敛为一个显式 `@Autowired` 的 9 参数构造器，不存在无参构造器。
+- 重跑专项在 testCompile 和 Surefire 启动阶段均不再报告 `ShopServiceImpl: No default constructor found` 或 `NoSuchMethodException`；第一个当前阻断仍是外部 Redis 的 `NOAUTH`。
+## 2026-07-27 探店专项测试：访问控制、所有权状态与 WRONGTYPE 清理
+
+- `WebConfig` 的拦截器排除规则无法依据 HTTP 方法区分 `/api/explore/posts/{id}` 的详情 GET 与 PUT/DELETE；把整个路径排除会意外放开写接口。修复将精确路径和 GET 方法判断置于 `LoginInterceptor`，未扩大 `/api/explore/**` 的匿名范围。
+- `ExploreServiceImpl.ownPost` 已正确抛出 `BusinessException(403)`；观察到的 HTTP 200 来自全局异常处理器。仅为业务码 401/403 设置相应 HTTP 状态，400/404 等保持现有业务响应格式。
+- Redis WRONGTYPE 用例曾在 `@AfterEach` 逐店执行 GEO 删除，错误类型使清理再次失败。共享清理现在先后均只对两个测试专用 Redis 键调用通用 `DEL`，不再执行 GEO/ZSet 命令清理。
+- 指定专项测试的首个真实阻断不是探店断言：`RedissonConfig` 连接 Redis 后 SELECT 2 返回 `NOAUTH Authentication required`，导致 Spring ApplicationContext 无法创建。按本轮约束未修改凭据，也未重试测试。
+## 2026-07-28 探店图片 OSS 上传审计
+
+- 现有 `AliyunOSSOperator` 已由商品/店铺图片上传路径复用；本轮应调用该组件，不能新增 OSS Client 或向前端暴露 AccessKey。
+- 用户端仅有 `/api/user/avatar` 上传接口，语义和尺寸限制均为头像专用；探店需要最小范围的新接口。
+- `BlogsView.vue` 当前使用 `form.imageText` 按换行/逗号转换为 `images` URL 列表；发布接口本身可继续接收上传成功后的 OSS URL 列表。
+
+## 2026-07-28 探店图片 OSS 上传实现
+
+- 用户端不存在可复用的通用图片接口：头像上传是 2MB 且会更新用户资料。因此新增探店专用上传端点，不影响头像行为；所有 AccessKey 仍仅由后端 `AliyunOSSProperties` 通过环境配置提供。
+- 前端 `uploadExploreImage` 使用现有 Axios 实例，因此自动携带用户 Bearer Token；`LoginInterceptor` 仅匿名放行探店 GET，`POST /api/explore/images` 仍受登录保护。
+- 本轮未实现取消时删除 OSS 对象：上传完成但用户取消发布会留下未引用的对象，避免在没有持久化归属关系时按 URL 删除而产生越权删除风险。
+
+## 2026-07-31 Explore Social Phase：现有实现审计
+
+- 事实表为 `qh_explore_post` 与 `qh_explore_like`，后者已定义 `post_id`、`user_id`、`created_at`、唯一键 `uk_qh_explore_like_post_user(post_id,user_id)`；无需为本阶段新增点赞字段或唯一约束 SQL。
+- `ExploreServiceImpl.like/unlike` 均是 `@Transactional`：数据库变更与点赞计数先完成，`ExploreHotService.updateAfterCommit` 再写 `qh:...:zset:explore:hot`。新点赞用户 ZSet 必须独立于热门 ZSet，并保持同一提交后、失败不回滚数据库的模式。
+- `ExplorePost.userId` 是作者 ID；`PUBLISHED` 才能在用户端详情、列表和评论中读取，`DISABLED/DELETED` 不可见。没有专门的审核拒绝状态，因此 Feed 读取和投递均以 `PUBLISHED` 为可见条件。
+- `UserDTO` 供登录态和个人资料使用，含实名/学号字段，不能作为公开关注/点赞用户响应。必须新增只含 ID、昵称、头像和可选社交状态的安全 VO。
+- 项目没有 `Follow`、`SignIn`、`common follow` 或社交 Feed 实现。`RedisKeys` 持有运行 namespace，默认配置为 `qh:dev:`，后续键方法只接收业务后缀。`application.yml` 已固定 Jackson `Asia/Shanghai`；社交日期计算应显式使用该时区。
+- 当前 `BlogsView.vue` 只显示完整点赞数与点赞状态，当前 `/profile` 有适合签到卡片的个人中心布局。现有 Explore 集成测试连接真实 Redis/MySQL，不符合本阶段新增默认离线测试要求。
+
+## 2026-07-31 Explore Social Phase：实现与验证发现
+
+- `qh_follow` 只生成未执行的独立增量 SQL；新增数据库实体/Mapper 遵循现有 `createdAt/updatedAt` 映射。帖子点赞结构已经完整，未产生不必要的点赞迁移。
+- Feed 的数据库回退限制关注用户为 500、单次页面最多 50；正常路径使用 `ZREVRANGEBYSCORE` 的 `maxTime/offset`，按 Redis 返回顺序批量读取、可见性和当前关注事实过滤。`DISABLED/DELETED` 与不可公开作者会被惰性清理，项目没有额外“审核不通过”状态。
+- 签到业务日期显式使用 `Asia/Shanghai`，限制当前月和近 12 月，今天未签到连续天数为 0；Redis 异常返回 503，绝不伪造签到成功。
+- 编译和新增默认离线测试均通过。第一次后端/前端验证在受限文件读取下失败，受控重试后成功；未据此声称任何真实 Redis/MySQL 运行能力。新增测试目前是 6 项最小离线覆盖，不等同于用户列出的完整社交业务矩阵。
+
+# 2026-07-31 Explore Social Phase 2 — 审查基线
+
+- 当前实现已包含签到、单向关注、共同关注、点赞用户缓存、关注 Feed、前端关注流和签到页面；先前记录的默认离线覆盖仅有 6 项，不能满足本轮不少于 45 项的要求。
+- `explore_social_increment.sql` 尚未执行；本轮只能对其进行静态 MySQL 8 与项目风格审查，并必须在人工清单中明确幂等性/一次性执行语义和非破坏性回滚方式。
+- 本轮所有业务测试必须使用 Mocked Mapper、Redis/Redisson 操作和用户上下文；真实集成测试仅建立显式开关和隔离 namespace 的入口，不得在本轮运行。
+
+## 2026-07-31 Explore Social Phase 2 — 审查与修复结论
+
+- 签到算法：`Asia/Shanghai`、day offset、位图计数、BITFIELD 的最低位连续计算正确；月份窗口修正为当前月加向前 11 个月，避免“近 12 个月”实际放行 13 个月。Redis 任意异常返回 503，身份只来自 `UserContext`。
+- 关注：事实表和唯一键正确，提交后缓存更新、缓存重建锁、loaded 空集标记、随机 TTL、SINTER 与数据库回退均存在。发现列表先全量读取后内存分页，已改为 `selectPage`；缓存提交后更新失败已增加指标。
+- 点赞：数据库和唯一键是事实源，前五查询为 `created_at,id ASC`。发现旧 ZSet 的同分按 userId 字典序而非点赞 ID 稳定排序，已升级派生 Key 到 `explore:likers:v2:` 并以固定宽度点赞 ID 成员排序；接口仍只暴露公共用户字段。
+- Feed：发现原实现预取 3 倍记录却按预取末项推进游标，会遗漏返回列表之外的帖子；已改为按实际扫描批次推进。发布投递改为最多 200 粉丝一批 Pipeline，容量裁剪保留最新数据；读取端仍过滤非 PUBLISHED、禁用作者和已取消关系，MySQL 回退限制 500 个关注用户与最多 50 条页面。
+- 前端：关注按钮现在防重复提交且失败不保留乐观状态；关注流合并去重并用版本号防止旧页签覆盖；卸载时失效旧请求；点赞头像显式最多五个；签到日历月份改按上海时区。
+- SQL：只创建 `qh_follow`，BIGINT/唯一键/时间字段/两条索引符合当前功能风格；项目未统一逻辑删除，不新增 `deleted`。没有外键与现有项目风格一致；脚本可安全重复运行但不能修复错误的同名既有表，文档规定人工核验后最多执行一次。
+
+## 2026-07-31 Explore Social Phase 2 — 第一批行为测试发现
+
+- `SignInServiceImpl#signIn()` 写入 SETBIT 后返回 `summary()`，因此签到成功场景的 Mock 必须同时配置后续 GETBIT；否则仅测试夹具会得到 `signedToday=false`，并非生产逻辑缺陷。
+- `status()`/`streak()` 的 BITFIELD 值以最低位代表当天：`0b111` 返回连续 3 天、`0b101` 在中间漏签处停为 1、最低位为 0 时返回 0。已以真实 Service 调用覆盖。
+- 当前真实日期的近 12 个月窗口内没有闰年二月；不能将 2024-02 绕过窗口作为合法调用。闰年二月的 29 天循环应在该月份进入允许窗口时，以同一离线 Mock 测试补充回归，不能把静态日期断言计为当前业务执行。
+
+## 2026-07-31 Explore Social Phase 2 — 第二批行为测试发现
+
+- `FollowServiceImpl` 在没有 Spring 事务代理的离线测试中仍会立即执行缓存任务；只有主动初始化 `TransactionSynchronizationManager` 才能验证 afterCommit 之前不写 Redis、afterCommit 后才写派生缓存的真实语义。
+- `updateMembership` 对 Redis 异常只记录 `follow_cache_update_total` 并吞掉异常，因此数据库插入结果和 `FollowCountsVO` 必须保持可用；该降级行为已在 Mock 依赖抛异常时验证。
+- 公共关注/粉丝响应是 `PublicUserSummaryVO`，而非 User 实体。对象序列化验证已证明电话和密码哈希不会进入该业务返回值；静态字段扫描仅作为补充。
+
+## 2026-07-31 Explore Social Phase 2 — 第三、四批与最终验证发现
+
+- 点赞用户 ZSet 的稳定 member 是固定宽度点赞 ID 加 userId。相同 `created_at` 的顺序由数据库 `created_at,id ASC` 查询和 member 的 ID 前缀共同保持；离线重建与前五返回均已实际验证。
+- Feed 容量裁剪命令实际使用 `ZREMRANGEBYRANK key 0 -101`（配置 maxSize=100 的测试夹具），因此删除的是最旧低分数据而非最新数据；同分 scroll offset 会在相同 minTime 上累加。
+- 所有通过状态仅说明 Mock 隔离下的 Service 行为与契约；Redis/MySQL 真实连接、SQL 执行、HTTP 和浏览器联调仍不存在。候选 SQL 不改变既有数据，但已有同名表时 `CREATE TABLE IF NOT EXISTS` 不会补齐错误结构，必须人工停下比对。

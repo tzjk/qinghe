@@ -1,5 +1,25 @@
 # 接口契约（M0）
 
+## 2026-07-24 普通优惠券与订单使用契约
+
+- `qh_coupon.status` 仅使用 `ENABLED/DISABLED`；`qh_user_coupon.status` 仅使用 `AVAILABLE/LOCKED/USED/EXPIRED`。Controller、Service 与前端均复用同名常量/枚举，不传递或拼接魔法状态值。
+- 普通领取由当前 `UserContext` 识别用户，必须在领取窗口、启用状态、可用库存和每人限领条件内。数据库以 `available_stock > 0` 条件更新扣减库存，`(user_id,coupon_id)` 唯一约束是重复提交最终兜底；当前结构下 `per_user_limit` 固定为 1。领取结果为 `CouponClaimVO`：`CLAIM_SUCCESS` 表示首次成功，`ALREADY_CLAIMED` 返回原用户券 ID 和明确中文提醒，库存不足、未开始、已结束和停用也使用 `claimStatus` 区分。
+- `POST /api/orders` 仅可信任 `cartItemIds/addressId/userCouponId/remark`。优惠金额由服务端用券类型和实时商品原始总额计算，`pay_amount = total_amount - discount_amount + delivery_fee`，不得为负；客户端金额、折扣率、券状态和用户编号一律忽略。
+- 创建订单时券状态条件更新 `AVAILABLE -> LOCKED` 并关联订单；支付成功 `LOCKED -> USED` 写入 `use_time`；待支付主动/超时取消仅处理该订单 `LOCKED` 券，未过期转回 `AVAILABLE`，已过期转为 `EXPIRED`。所有路径与订单条件状态更新、库存恢复同一业务事务。
+- 管理员优惠券写接口从 `AdminContext` 获取身份，不接收 `adminId`；领取开始后不允许修改金额、门槛、库存、时间和适用店铺，已有领取记录只能停用，不能物理删除。写操作继续复用 `qh_operate_log`。
+
+可领取列表以一次当前用户的用户券查询批量映射 `claimed/userCouponId/userCouponStatus`，不逐券查询；`AVAILABLE/LOCKED/USED/EXPIRED` 都表示已经领取，刷新后保持已领取。该契约已在真实 `qh_coupon/qh_user_coupon` 映射上验证；没有执行迁移 SQL。`CouponOrderIntegrationTest` 覆盖领取窗口、库存、限领、归属、状态、店铺/门槛、金额重算、锁定/核销/释放、并发与事务回滚，共 22 项通过。
+
+该契约已在真实 `qh_coupon/qh_user_coupon` 映射上验证；没有执行迁移 SQL。`CouponOrderIntegrationTest` 覆盖领取窗口、库存、限领、归属、状态、店铺/门槛、金额重算、锁定/核销/释放、并发与事务回滚，共 20 项通过。
+
+## 2026-07-23 订单状态模型与接口边界
+
+当前真实订单接口只有 `POST /api/orders`；本轮不创建支付、取消、管理员订单或状态变更端点。订单创建响应不因状态枚举而扩展字段。
+
+服务端创建订单统一写入 `OrderStatus.PENDING_PAY.getCode()`，即数据库已有编码 `PENDING_PAY`。状态机合法流转预定义为：`PENDING_PAY -> PAID -> ACCEPTED -> DELIVERING -> COMPLETED`，以及 `PENDING_PAY -> CANCELLED`；`PENDING_PAYMENT` 不是合法编码。
+
+候选时间字段和 `(status, pay_expire_time)` 索引等待真实表结构人工核验，当前 API 不接受或返回它们。
+
 ## 2026-07-20 学生首次建档多校区与 Redis 测试分层契约
 
 - `PUT /api/student/profile` 在学生无当前 `current_flag=1` 资料时必须提交 `realName`、`studentNo`、`campusId`、`collegeName`、`majorName`、`className` 和合法 `contactPhone`。`campusId` 必须指向真实且 `status=1` 的 `qh_campus`；`campusName` 不属于请求契约，服务端自行读取名称。
@@ -122,8 +142,8 @@ M3A 前端已接入上述地址与购物车接口：地址请求仅使用 receiv
 | PUT | `/api/orders/{id}/pay` | 用户 | 无；仅模拟支付 | `OrderVO`。 |
 | PUT | `/api/orders/{id}/complete` | 用户 | 无 | `OrderVO`。 |
 | POST | `/api/orders/{id}/review` | 用户 | `content`、`score`（1 至 5）、可选 `images` | `CommentVO`；写入 `qh_comment`，同一订单仅一条评价。 |
-| GET | `/api/coupons` | 用户 | `page`、`size` | 可领取 `PageResult<CouponVO>`。 |
-| POST | `/api/coupons/{id}/claim` | 用户 | 无 | `UserCouponVO`。 |
+| GET | `/api/coupons` | 用户 | `page`、`size` | `PageResult<CouponVO>`，含 `claimed/userCouponId/userCouponStatus`。 |
+| POST | `/api/coupons/{id}/claim` | 用户 | 无 | `CouponClaimVO`，用 `claimStatus` 区分首次、已领取、库存不足、未开始和已结束。 |
 | GET | `/api/coupons/mine` | 用户 | `page`、`size`、可选 `status` | `PageResult<UserCouponVO>`。 |
 
 订单创建必须校验初始 `PENDING_PAY` 状态、商品上架与库存、地址归属、优惠券归属/有效期/门槛。支付不调用第三方服务。校园地址上线后，订单还必须在创建时写入不可变的完整配送快照，不能在订单详情中实时拼接可被用户修改的地址。
@@ -329,3 +349,10 @@ M3A 前端已接入上述地址与购物车接口：地址请求仅使用 receiv
 - `GET /api/user/me` 返回安全 `UserDTO`，其中 `realName`、`studentNo`、`hasStudentProfile` 来自当前登录用户唯一的 `current_flag=1` 学生资料；接口每次读取时组合当前资料，不能仅信任旧 Redis 会话，确保管理员改名后用户刷新可见最新结果。
 - `phoneMasked` 表示登录手机号的脱敏展示；`nickname` 表示账号昵称；`realName` 表示实名学籍资料；`studentNo` 表示学号。可空 `username` 不是实名资料，不能参与页面显示名回退。
 - `UserDTO` 不公开学生资料内部 ID、`currentFlag`、`activeFlag`、`passwordHash`、二维码令牌或 Token。`PUT /api/user/profile` 仍只接受昵称和头像，普通学生不得通过个人中心修改实名或其他受保护学籍字段。
+
+## 订单生命周期契约（2026-07-24）
+
+- 用户订单读取严格以 `UserContext` 作为归属条件；列表分页状态筛选和详情都不接收 `userId`，详情包含批量装配的订单明细、状态编码和中文名称。
+- 模拟支付为 `POST /api/orders/{orderId}/simulate-pay`：不接收支付金额，仅使用持久化 `pay_amount`；仅在 `PENDING_PAY` 且当前时间不晚于 `pay_expire_time` 时以条件更新写入 `PAID/pay_time`。
+- 用户取消为 `DELETE /api/orders/{orderId}`：仅 `PENDING_PAY`，条件更新写入 `CANCELLED/cancel_time/USER_CANCEL` 成功后才在同一事务恢复每项明细库存；不删除订单或明细，也不恢复购物车。
+- 管理员端仅接受固定动作端点，不接受客户端目标状态或 `adminId`：`PAID -> ACCEPTED`、`ACCEPTED -> DELIVERING`、`DELIVERING -> COMPLETED`，分别写接单、配送和完成时间。

@@ -1,0 +1,15 @@
+{
+  "case_count": 50,
+  "metrics": {
+    "intent_accuracy": 0.98,
+    "tool_selection_accuracy": 0.98,
+    "auth_gate_accuracy": 1.0,
+    "safety_block_accuracy": 1.0,
+    "unsupported_accuracy": 1.0,
+    "hallucination_free_rate": 1.0,
+    "max_tool_calls_compliance": 1.0,
+    "response_schema_valid_rate": 1.0
+  },
+  "offline": true,
+  "contains_credentials": false
+}

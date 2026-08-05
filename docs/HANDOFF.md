@@ -121,7 +121,7 @@ M2A 验证码获取与登录链路为 `awaiting_manual_verification`；M2B 已�
 
 - M2A：验证码、登录、Redis Token、当前用户、资料更新、退出及前端登录状态。
 - M2B：分类、首页六区摘要、商铺分页/筛选/详情/商品/评论、商品分页与详情。
-- 商铺详情缓存：`qh:shop:detail:{shopId}`、`qh:shop:null:{shopId}`、`qh:lock:shop:{shopId}`；包含 Cache Aside、空值缓存、随机 TTL、有限锁重试及 Redis 异常降级。
+- 目录缓存已统一为 `qh:cache:shop:{shopId}`、`qh:cache:goods:{goodsId}`、`qh:cache:shop-goods:{shopId}`；对应锁为 `qh:lock:cache:*`。包含显式空值、配置化随机 TTL、有限 Redisson 重建、坏缓存删除和 Redis 异常回源。
 - 前端：`category.js`、`home.js`、`shop.js`、`goods.js` 均复用 `http.js`；首页、商铺列表、商铺详情已接入真实接口并处理加载、空数据和错误状态。
 - M3A 地址管理：当前用户地址查询、新增、修改、删除和默认地址切换；已实现首地址默认和默认地址删除后的自动补选。
 - M3A 结构门禁：用户已人工执行一次 `m3a_increment.sql`；四张目标表实际结构、实体、基线 SQL和设计文档现已一致。
@@ -537,3 +537,65 @@ ORDER BY table_name, constraint_name;
 - 根因：旧 `/api/user/me` 只返回 Redis 会话内的账号 `UserDTO`，未查询当前 `qh_student_profile`；个人中心和导航又只读取 `nickname`，导致实名已建档仍显示账号昵称，且误将可空 `username` 呈现为用户信息。
 - 实施：用户服务将只对当前 `UserContext` 身份读取 `qh_user` 与 `current_flag=1` 学生资料，安全映射 `realName/studentNo/hasStudentProfile`，并刷新当前会话；不写回昵称、不改手机号、不改变学生资料写入流程。前端使用共享回退函数，并发加载账号和学生资料，已区分未建档、资料加载失败和实名为空。
 - 验证：`UserAvatarServiceTest` 6/0/0；完整 Maven 回归 77/1/0，唯一失败为范围外 `DormAssetIntegrationTest` 的 409/200 断言差异，未修改其逻辑或断言。前端真实路径 Vite 构建成功（1732 modules）。`Q:\backend`、`Q:\.m2` 不存在，且实际工作区的 `mvn clean package -DskipTests` 受控执行申请受平台额度限制拒绝，故后端打包未验证；需在本机具备 Q 路径时运行用户指定两条 Maven 命令。
+
+# 2026-07-23 订单生命周期状态模型与候选迁移（代码/文档完成，验证待本机）
+
+- `OrderStatus` 已统一六个状态及五条合法流转；当前订单创建仍只写既有 `PENDING_PAY`，不引入 `PENDING_PAYMENT`，也未新增支付、取消、管理员或页面接口。
+- `order_lifecycle_schema_increment.sql` 是 DataGrip 人工审核候选，拟新增 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 与 `(status, pay_expire_time)`；不重复 `cancel_reason`、`cancel_time`、`completed_time`，不新增 `goods_amount`。真实库仍需用户手工执行 `SHOW CREATE TABLE qh_order;` 与 `SHOW INDEX FROM qh_order;`。
+- 后续取消订单需以 `REQUIRED` 订单事务同时完成条件状态更新、库存恢复和直接写入 `qh_operate_log`；关键方法不能再触发通用 `REQUIRES_NEW` AOP 成功日志。
+- 本会话确认 `Q:\backend`、`Q:\.m2` 均不存在，故指定 Maven compile 和 `OrderCreateIntegrationTest` 均未执行；未创建映射路径、未改 Maven/Redis 配置。待本机环境可用后，须重跑两条指定命令并要求订单专项为 5 tests / 0 failures / 0 errors。
+
+# 2026-07-24 订单生命周期核心闭环
+
+- 已只读确认真实 `qh_order` 含 `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time`、取消/完成字段及 `(status,pay_expire_time)` 索引；候选 SQL 未由应用执行。
+- 已完成用户列表/详情、模拟支付、待支付取消及精确库存恢复；管理员列表/详情、接单、开始配送、完成订单；以及每分钟超时取消任务。支付、取消和超时取消的状态竞争均以数据库条件更新收敛。
+- 已完成用户与管理员订单页面，复用单一 HTTP 实例和既有身份守卫。订单专项为 13/0/0/0（原创建 5、生命周期 8），后端 package 与前端 build 均成功；测试前缀数据残留为 0。
+- 未实现优惠券、Redis Stream、WebSocket、缓存、营业报表、真实支付、骑手或配送轨迹。多实例超时任务锁保留为后续增强，不能替代现有数据库条件更新。
+
+## 2026-07-24 订单超时取消与多实例任务锁（完成并验证）
+
+- 新增 `OrderTimeoutCancelService` 扫描 `PENDING_PAY AND pay_expire_time <= now`，默认每批 100 条；每笔调用独立代理事务。`OrderCancellationService` 是用户取消与超时取消共用的资源释放内核：条件更新成功后精确按 `qh_order_item` 恢复库存、直接写一次 `qh_operate_log`，保留订单/明细且不恢复购物车。
+- 支付条件更新也要求 `pay_expire_time >= now`；超时取消条件同时限制 `id`、`PENDING_PAY` 和截止时间。数据库条件更新是支付/取消并发与重复扫描的最终幂等保障。
+- `OrderPaymentTimeoutTask` 仅以 Redisson 的 `qh:lock:order:timeout-cancel` 获取有限等待和租约锁并触发扫描。Redisson 复用 `spring.redis`，未获锁、Redis 异常或锁异常均结束本轮，且仅当前线程持锁才解锁。
+- 本轮指定订单测试为 20/0/0/0（新增 `OrderTimeoutCancelIntegrationTest` 7 项，含真实 Redis 锁未获得与释放后重试）；`mvn -Dmaven.repo.local=Q:/.m2 -DskipTests package` 成功生成后端 JAR。未执行 SQL、未改 Redis 地址/密码，未进入优惠券、WebSocket、缓存或报表任务。
+# 2026-07-24 普通优惠券基础业务：实现完成，验证受环境和候选迁移阻断
+
+## 2026-07-24 秒杀优惠券 Redis Stream：验证与交接完成
+
+- 路由边界：`POST /api/coupons/{couponId}/claim` 保持普通券的 MySQL 同步领取，并拒绝 `coupon_status=SECKILL`；`POST /api/coupons/{couponId}/seckill-claim` 为秒杀券唯一入口。
+- Lua 使用 `qh:coupon:seckill:stock:{couponId}`、`qh:coupon:seckill:users:{couponId}`、`qh:coupon:seckill:meta:{couponId}` 和 `qh:stream:coupon:claim` 原子校验活动、时间、重复领取与库存后受理。返回码依次为：0 受理、1 已领、2 库存不足、3 未开始、4 已结束、5 已停用、6 未预热。
+- Consumer Group 使用配置化 Stream/Group，底层 `XGROUP CREATE ... 0-0 MKSTREAM` 安全创建空 Stream；仅忽略 `BUSYGROUP`。消费者在 MySQL 事务成功完成用户券幂等检查、`available_stock > 0` 条件扣减和用户券写入后 ACK。`qh_user_coupon(user_id,coupon_id)` 唯一约束是最终一人一券保护。
+- Pending 恢复以 `XPENDING`/`XCLAIM` 执行；失败消息保留 Pending，达到配置重试上限后记录精简失败原因并 ACK。Redisson 锁只保护跨实例的恢复调度。
+- 已验证：`CouponOrderIntegrationTest` 22 项、`CouponSeckillStreamIntegrationTest` 7 项，合计 29/0/0/0；后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，JAR 已生成。未运行 SQL、前端构建、商品缓存、WebSocket 或营业报表任务。
+
+## 2026-07-25 管理员营业报表：已完成
+
+- 新增管理员报表接口：概览、日期趋势、店铺/商品排行和优惠券使用统计；全部复用 `/api/admin/**` 管理员认证，不接受 `adminId`。
+- 采用 MySQL 实时 `SUM/COUNT/GROUP BY` 聚合，统一 `Asia/Shanghai` 日期边界，默认 7 天、最大 90 天、排行上限 50；趋势由服务端补零，金额均为 `BigDecimal`。未新增日报快照、定时任务、缓存或 SQL 脚本。
+- 新增 `AdminBusinessReportView`、管理端路由和菜单；原生 SVG 营业额趋势图及 Element Plus 表格只展示服务端统计数据，未引入图表依赖。
+- 验证：`BusinessReportIntegrationTest` 为 3/0/0/0；后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功；前端 `D:/develop/NodeJS/npm.cmd run build` 成功（1745 modules）。前端仅有第三方 PURE 注释和大 chunk 非阻断警告。
+- 后续若数据规模增长，先核对索引与 `EXPLAIN`；候选人工索引说明位于 `docs/business-report-design.md`，本轮未执行 SQL。
+
+- 已新增普通券领域模型、管理员/用户端 API、领取条件更新、订单锁定/支付核销/取消释放、用户与管理员页面，以及候选人工迁移 `backend/src/main/resources/sql/coupon_foundation_increment.sql`。不含任何秒杀、Lua、Redis Stream、WebSocket、商品缓存或报表代码。
+- 真实 `qh_coupon/qh_user_coupon` 仍是旧结构，缺少本轮字段；候选 SQL 未执行。手工审核并执行后，先重跑本轮指定四类 Maven 专项测试，再进行跳过测试打包和前端构建。
+- 本轮指定 Maven 命令已仅执行一次，因 `Q:\.m2` Access is denied 在 Maven 启动阶段失败，未到编译/Surefire；后端打包按“专项通过后”规则未运行。前端 `npm run build` 已执行一次，受 esbuild 读取工作区上级目录限制而无法加载 `vite.config.js`，未生成构建结论。
+- 后续收口结果见下节；本段“迁移/环境阻断”是此前快照，不能作为当前状态。
+
+## 2026-07-24 普通优惠券基础模块：验证与收口完成
+
+- 用户已人工完成优惠券真实表结构与索引；`coupon_foundation_increment.sql` 保留为参考，未由 Codex 或应用自动执行。
+- `mvn "-Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest,OrderTimeoutCancelIntegrationTest,CouponOrderIntegrationTest" test` 在 `Q:\backend` 使用默认 Maven 本地仓库通过：40 tests、0 failures、0 errors、0 skipped（优惠券专项 20 项）。
+- `mvn -DskipTests package` 成功并生成 `Q:\backend\target\qinghe-life-backend-1.0.0.jar`；真实 `frontend` 路径 Vite 构建在修复 `AdminCouponView.vue` 缺失的表格列闭合标签后成功（1741 modules）。
+- `COUPON_ORDER_TEST_` 的优惠券、用户券、订单、明细、购物车、地址、商品、店铺、操作日志和用户均经只读计数确认残留为 0。未开始 Lua、Redis Stream、秒杀券、Redis 商品缓存、WebSocket 或营业报表。
+
+## 2026-07-24 店铺与商品 Redis 热点缓存：完成并验证
+
+- 公开店铺详情、商品详情和指定店铺上架商品列表共用 `CatalogCache`：显式空值标记、JSON 坏值删除、配置化基础 TTL+抖动、有限 Redisson 业务 Key 锁和 Redis/锁异常 MySQL 降级均集中实现。商品库存与销量不作为缓存权威数据，响应时仍从 MySQL 读取。
+- 店铺、商品的管理员写入均在事务提交成功后精确失效。店铺失效同时覆盖本店详情、商品列表和本店商品详情；商品新增/修改/上下架/库存或主图修改删除商品详情和所属店铺列表，商品换店同时删除新旧店铺列表。失败仅记录日志。
+- 验证：`CatalogCacheIntegrationTest,AdminShopIntegrationTest,AdminGoodsIntegrationTest,ShopCoverServiceTest,GoodsImageServiceTest` 共 12/0/0/0；`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功生成后端 JAR。未执行 SQL、前端构建或范围外测试。
+## 2026-07-24 订单 WebSocket 通知里程碑：完成并验证
+
+- 已完成用户/管理员订单 WebSocket 通知：固定路径 `/ws/orders/user`、`/ws/orders/admin` 在握手时通过 `Sec-WebSocket-Protocol` 复用 Redis 登录会话；不在 URL/日志中暴露 Token，不接受客户端 userId 订阅。
+- 订单创建、支付、两类取消和管理员接单/配送/完成均通过统一订单事件在 `AFTER_COMMIT` 发送。会话发送失败不会回滚订单；每用户多 Session、异常清理、前端最多 5 次递增退避重连、登出/页面卸载关闭、消息去重与旧状态保护已实现。
+- 验证：`OrderWebSocketIntegrationTest` 16/0/0/0，合并 `OrderLifecycleIntegrationTest` 和 `OrderTimeoutCancelIntegrationTest` 为 31/0/0/0；后端 `-DskipTests package` 成功，前端 Vite build 成功。前端保留第三方 PURE 注释和 bundle 体积非阻断警告。
+- 单实例只向本机 Session 广播；多实例需要 Redis Pub/Sub 或消息代理，且离线消息持久化/补偿不在本里程碑范围内。

@@ -46,6 +46,13 @@ public class GlobalExceptionHandler {
         return Result.fail(code, exception.getUserMessage());
     }
 
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    @ExceptionHandler(ForbiddenException.class)
+    public Result<Void> handleForbiddenException(ForbiddenException exception) {
+        log.warn("权限不足：{}", exception.getMessage());
+        return Result.fail(403, exception.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public Result<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception) {
         String message = bindingMessage(exception.getBindingResult());

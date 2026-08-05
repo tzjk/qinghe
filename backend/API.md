@@ -1,5 +1,21 @@
 # 后端接口说明（M2）
 
+## 2026-07-24 秒杀优惠券领取
+
+| 方法 | 路径 | 身份 | 说明 |
+|---|---|---|---|
+| POST | `/api/coupons/{couponId}/claim` | 当前用户 | 普通券 MySQL 同步领取；明确拒绝 `coupon_status=SECKILL` 的券。 |
+| POST | `/api/coupons/{couponId}/seckill-claim` | 当前用户 | 仅秒杀券；Lua 原子校验后写入 Redis Stream，返回受理结果，不在 HTTP 线程写 MySQL 用户券。 |
+
+- 秒杀领取响应沿用 `CouponClaimVO.claimStatus`：Lua `0` 为 `CLAIM_SUCCESS`，`1` 为 `ALREADY_CLAIMED`，`2` 为 `OUT_OF_STOCK`，`3` 为 `NOT_STARTED`，`4` 为 `ENDED`，`5` 为 `ACTIVITY_DISABLED`，缺少或不完整预热元数据的 `6` 为 `ACTIVITY_NOT_READY`。
+- 普通领取仍使用 MySQL 事务与 `available_stock > 0` 条件扣减；秒杀异步落库同样使用 `qh_coupon.available_stock > 0` 条件更新和 `qh_user_coupon(user_id,coupon_id)` 唯一约束作为最终兜底。
+
+## 2026-07-23 订单状态模型与候选迁移
+
+- 当前真实订单接口仍只有 `POST /api/orders`。它只接收 `cartItemIds`、`addressId`、可选 `remark`，服务端写入 `PENDING_PAY`；本轮未新增支付、取消、管理员订单或订单页面接口。
+- `OrderStatus` 统一定义 `PENDING_PAY`（待支付）、`PAID`（已支付）、`ACCEPTED`（已接单）、`DELIVERING`（配送中）、`COMPLETED`（已完成）、`CANCELLED`（已取消）。合法流转为 `PENDING_PAY -> PAID -> ACCEPTED -> DELIVERING -> COMPLETED`，以及 `PENDING_PAY -> CANCELLED`；不得使用 `PENDING_PAYMENT`。
+- `pay_time`、`accepted_time`、`delivery_time`、`pay_expire_time` 仅存在于候选人工迁移，尚未核验真实 MySQL，因而不在当前请求或响应中出现。
+
 ## 2026-07-20 学生首次建档多校区与 Redis 测试分层
 
 - `PUT /api/student/profile` 首次建档请求增加 `campusId`。服务端仅以 `GET /api/campuses` 返回的真实启用校区（`qh_campus.status=1`）作为可选值；不存在、停用或缺失的编号均拒绝。请求不接收也不信任 `campusName`。
@@ -92,7 +108,7 @@
 | DELETE | `/api/cart/{id}` | 是 | 无 | 仅删除当前用户的指定购物车项。 |
 | DELETE | `/api/cart` | 是 | 无 | 仅清空当前用户购物车。 |
 
-商铺详情采用 Cache Aside：正常缓存使用 `qh:shop:detail:{shopId}` 并增加随机过期时间；不存在商铺使用 `qh:shop:null:{shopId}` 短期空值缓存；重建互斥锁使用 `qh:lock:shop:{shopId}`，限定三次重试。Redis 异常时降级查询 MySQL，不执行 Redis 清库操作。
+商铺详情、商品详情和指定店铺上架商品列表均采用 Cache Aside：`qh:cache:shop:{shopId}`、`qh:cache:goods:{goodsId}`、`qh:cache:shop-goods:{shopId}`。空值使用同 Key 的明确短 TTL 标记；热点重建锁为 `qh:lock:cache:shop:{shopId}`、`qh:lock:cache:goods:{goodsId}`、`qh:lock:cache:shop-goods:{shopId}`，均有限等待和三次重试。Redis 读取、序列化或锁异常会降级查询 MySQL，坏 JSON 会先删除；不执行 Redis 清库操作。
 
 错误示例：验证码不存在、过期或错误返回业务 `code=400` 和清晰 `message`；缺少、错误或过期 Bearer Token 返回 HTTP 401。接口不返回数据库密码、Redis 密码或内部连接信息。
 
@@ -246,3 +262,72 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 - `GET /api/user/me` 仅从当前 Bearer Token 对应的 `UserContext` 取得用户身份，再由用户服务查询该用户的 `qh_user` 与 `qh_student_profile.current_flag=1` 当前资料。响应新增安全展示字段 `realName`、`studentNo`、`hasStudentProfile`；不返回 `currentFlag`、`activeFlag`、`passwordHash`、二维码令牌、Token 或学生资料内部 ID。
 - 字段语义固定为：`phone` 是登录手机号（响应中仅返回 `phoneMasked`）；`nickname` 是账号昵称；`realName` 是学生实名资料；`studentNo` 是学号。`username` 如存在仅是账号字段，不能作为真实姓名或显示名回退。
 - `PUT /api/user/profile` 继续只允许更新账号昵称与头像，不接受或更新 `realName`、`studentNo` 等受保护学籍字段；实名资料不回写 `qh_user.nickname`。学生资料变更后刷新页面会重新查询当前资料并显示最新实名。
+
+## 2026-07-24 订单生命周期核心接口
+
+| 方法 | 路径 | 身份 | 说明 |
+|---|---|---|---|
+| GET | `/api/orders` | 当前用户 | 支持 `page`、`size`、`status`；仅返回本人安全订单摘要、状态编码/中文名与批量明细。 |
+| GET | `/api/orders/{orderId}` | 当前用户 | 仅返回本人订单；地址使用订单快照。 |
+| POST | `/api/orders/{orderId}/simulate-pay` | 当前用户 | 模拟支付；仅限未超时的 `PENDING_PAY`，服务端使用订单 `payAmount`。 |
+| DELETE | `/api/orders/{orderId}` | 当前用户 | 仅取消 `PENDING_PAY`；条件更新成功后事务内按订单明细恢复库存，不恢复购物车。 |
+| GET | `/api/admin/orders` | 管理员 | 支持订单号关键词、状态、分页；用户手机号脱敏。 |
+| GET | `/api/admin/orders/{orderId}` | 管理员 | 返回订单快照、明细和必要配送地址。 |
+| POST | `/api/admin/orders/{orderId}/accept` | 管理员 | 仅 `PAID -> ACCEPTED`。 |
+| POST | `/api/admin/orders/{orderId}/deliver` | 管理员 | 仅 `ACCEPTED -> DELIVERING`。 |
+| POST | `/api/admin/orders/{orderId}/complete` | 管理员 | 仅 `DELIVERING -> COMPLETED`。 |
+
+- 新订单由服务端写入 `createTime` 与默认 15 分钟 `payExpireTime`；客户端不能提交用户、状态、金额或时间字段。
+- 支付条件更新同时要求 `pay_expire_time >= 当前服务端时间`。超时取消条件为 `id + PENDING_PAY + pay_expire_time <= 当前服务端时间`；只有更新成功才在同一 `REQUIRED` 事务恢复订单明细对应库存并写一条 `qh_operate_log`。支付与取消竞争时仅允许一个状态更新成功。
+- 超时任务由 `order.timeout.enabled`、`cron`、`batch-size`、`lock-wait-seconds`、`lock-lease-seconds` 配置。默认每分钟按 100 条扫描；Redisson 使用现有 `spring.redis` 连接获取 `qh:lock:order:timeout-cancel`，未获锁或 Redis/锁异常即结束本轮，数据库条件更新仍为最终正确性保障。
+
+## 2026-07-24 订单 WebSocket 实时通知
+
+| 通道 | 路径 | 身份 | 握手约束 |
+|---|---|---|---|
+| 用户订单通知 | `/ws/orders/user` | 当前用户 | `Sec-WebSocket-Protocol` 携带 `qh-user.{token}`；服务端只从 Redis 会话取得用户 ID，不接受订阅 userId。 |
+| 管理员订单通知 | `/ws/orders/admin` | 当前管理员 | `Sec-WebSocket-Protocol` 携带 `qh-admin.{token}`；仅 Redis 管理员会话可建立。 |
+
+- Token 不进入 URL、响应体或日志。无 Token、无效 Token、角色不匹配及已失效会话均拒绝握手；同一用户的多标签页/设备可同时连接。
+- 每帧均为专用安全消息对象，不发送完整 `Order` 实体：`messageType`、`orderId`、`orderNo`、`orderStatus`、`statusText`、`occurredAt`、`summary`。
+- 用户消息类型：`ORDER_CREATED`、`ORDER_PAID`、`ORDER_CANCELLED`、`ORDER_TIMEOUT_CANCELLED`、`ORDER_ACCEPTED`、`ORDER_DELIVERING`、`ORDER_COMPLETED`。管理员消息类型：`ADMIN_NEW_ORDER`、`ADMIN_ORDER_CANCELLED`、`ADMIN_ORDER_STATUS_CHANGED`。
+- WebSocket 只作状态变化提醒。首次加载、重连或漏消息后，客户端必须通过既有 HTTP 订单接口获取真实状态。
+## 2026-07-25 管理员营业报表
+
+全部报表接口均为 `GET /api/admin/reports/**`，由既有管理员 Token 和 `AdminContext` 保护；客户端不接收或传入 `adminId`。日期为 `yyyy-MM-dd`，按 `Asia/Shanghai` 自然日使用开始日含、结束日次日零点不含的查询边界；未传日期默认最近 7 天，最大 90 天。空数据返回数值 `0` 和空数组。
+
+| 方法 | 路径 | 查询参数 | 返回要点 |
+|---|---|---|---|
+| GET | `/api/admin/reports/overview` | 无 | 今日订单、有效支付订单、完成/取消订单、营业额、优惠金额、新增用户、有订单店铺，以及待支付、已支付待接单、已接单、配送中四个待处理分项。 |
+| GET | `/api/admin/reports/trend` | `startDate`、`endDate` | 每个自然日返回 `reportDate`、订单数、支付订单数、完成/取消订单数、营业额和优惠金额；缺失日期由服务端补零。 |
+| GET | `/api/admin/reports/shop-ranking` | `startDate`、`endDate`、可选 `top`（1-50，默认10） | `shopId`、`shopName`、`paidOrderCount`、`salesAmount`；销售额相同按店铺 ID 升序。 |
+| GET | `/api/admin/reports/goods-ranking` | 同上 | `goodsId`、`goodsName`、`salesQuantity`、`salesAmount`；销售额相同按商品 ID 升序。 |
+| GET | `/api/admin/reports/coupon-summary` | `startDate`、`endDate` | 已核销优惠券的 `couponId`、`couponName`、`usedCount`、`discountAmount`。 |
+
+统计口径：`total_amount` 为原始商品总额，`pay_amount` 为优惠后实际支付金额；营业额、店铺排行和商品排行只统计 `PAID`、`ACCEPTED`、`DELIVERING`、`COMPLETED`，不含 `PENDING_PAY` 或 `CANCELLED`。优惠金额固定为 `total_amount - pay_amount`，全部由数据库 `DECIMAL` 映射为 `BigDecimal`。商品排行的销售额为有效订单明细 `subtotal` 合计，避免把一张订单级优惠券任意摊分到商品。
+
+# 2026-07-24 普通优惠券与订单使用接口
+
+所有金额由服务端以 `BigDecimal` 计算并按统一两位小数规则返回；创建订单请求只允许新增 `userCouponId`，不接受 `discountAmount`、`payAmount`、`discountRate`、`couponStatus` 或 `userId`。
+
+| 方法 | 路径 | 身份 | 请求/响应要点 |
+|---|---|---|---|
+| GET | `/api/coupons` | 用户 | 查询当前活动普通券，支持 `page/size`；`CouponVO` 返回 `claimed`、`userCouponId`、`userCouponStatus`，本人已领取券即使已领空仍显示为已领取。 |
+| POST | `/api/coupons/{couponId}/claim` | 用户 | 按领取窗口、启用状态、每人限领和 `available_stock > 0` 条件领取；返回 `CouponClaimVO` 的 `claimStatus`。首次为 `CLAIM_SUCCESS`，重复为 `ALREADY_CLAIMED`（携带原 `userCouponId` 和“该优惠券已领取，请勿重复领取”），库存/活动状态使用明确状态码字段而非解析中文文案。 |
+| GET | `/api/coupons/mine` | 用户 | 查询本人券，支持 `page/size/status`；状态仅为 `AVAILABLE/LOCKED/USED/EXPIRED`。 |
+| GET | `/api/admin/coupons` | 管理员 | 普通优惠券分页查询，支持 `page/size/status`。 |
+| POST | `/api/admin/coupons` | 管理员 | 新增券规则；不接收 `adminId`，适用店铺、时间、库存和金额均由服务端校验。 |
+| PUT | `/api/admin/coupons/{couponId}` | 管理员 | 仅领取开始前可编辑券规则。 |
+| PUT | `/api/admin/coupons/{couponId}/status` | 管理员 | `{ "status": "ENABLED|DISABLED" }` 启停，不提供物理删除。 |
+| GET | `/api/admin/coupons/{couponId}/stats` | 管理员 | 返回领取总数与 `LOCKED/USED/EXPIRED` 数量。 |
+
+订单创建 `POST /api/orders` 的请求体为 `cartItemIds`、`addressId`、可选 `userCouponId` 和可选 `remark`。服务端在同一事务内重新计算原始总额、锁定本人 `AVAILABLE` 用户券、写入优惠额和实付额；支付后核销，待支付主动或超时取消后释放，取消时已过使用截止则转为 `EXPIRED`。
+
+上述普通优惠券接口已由真实表集成测试验证：领取使用条件库存扣减，订单仅接受 `userCouponId`，且金额、状态、归属、时间、店铺和门槛均由服务端复核。`CouponOrderIntegrationTest` 22 项为 0 failures、0 errors。
+
+## 2026-07-24 店铺与商品目录缓存
+
+- 公开接口路径和响应结构不变：`GET /api/shops/{id}`、`GET /api/goods/{id}`、`GET /api/shops/{id}/goods`。
+- 正常 TTL 由 `catalog.cache.shop-ttl-minutes`、`goods-ttl-minutes`、`list-ttl-minutes` 配置，并加 `ttl-jitter-minutes`；空值仅使用 `null-ttl-minutes`。锁等待、租约和最大重试由同一配置组控制。
+- 商品缓存只保存目录静态字段；库存和销量仍逐次从 MySQL 读取，商品实时扣减库存不以 Redis 为事实来源。
+- 管理员店铺/商品写入完成事务提交后，精确删除相关详情与店铺商品列表 Key；商品变更店铺会同时删除新旧店铺列表。缓存删除失败仅记录日志，不回滚数据库更新。

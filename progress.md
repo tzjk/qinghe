@@ -1,5 +1,41 @@
 # 活动进度
 
+## 2026-07-25 管理员营业报表：启动
+
+- 已按用户书面授权仅执行一次 `git branch --show-current` 与 `git status -sb`：当前为 `feature/business-report`，工作区干净。
+- 已建立本轮持久计划：范围限定为管理员概览、趋势、排行、优惠券统计、管理端报表页及专项测试；未修改任何业务代码、SQL、配置或无关模块。
+- 下一步：只读核验指定业务表/实体/认证/管理端/调度/文档，确定实时聚合所需的最小接口和索引结论后实施。
+
+## 2026-07-25 管理员营业报表：实施与验证
+
+- 已实现管理员概览、趋势、店铺/商品排行和优惠券使用统计；聚合均在 `BusinessReportMapper` 中完成，服务层统一 `Asia/Shanghai` 左闭右开日期范围、默认 7 天、最大 90 天、空值归零与趋势补零。未新增日报快照、定时任务、缓存或 SQL 脚本。
+- 已新增管理端营业报表页面、路由、菜单和 API 模块；使用原生 SVG 趋势线与 Element Plus，未新增图表库。页面不重新计算服务端指标。
+- 专项命令首次受沙箱拒绝读取本地 JAR 阻断；受控重试后两次测试分别发现/修复严格 SQL 分组兼容性和测试订单必填地址，第三次 `BusinessReportIntegrationTest` 为 3/0/0/0。测试数据以 `BUSINESS_REPORT_TEST_` 前缀创建，并按用户券、明细、订单、地址、商品、店铺、用户、管理员顺序精确清理。
+- 后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功；前端 `D:/develop/NodeJS/npm.cmd run build` 成功（1745 modules），仅有第三方 PURE 注释和大 chunk 非阻断警告。
+
+## 2026-07-24 优惠券基础业务与普通订单使用：实施结果（未收口）
+
+- 完成候选人工增量 SQL `backend/src/main/resources/sql/coupon_foundation_increment.sql`；只读实库确认所需字段仍不存在，脚本未执行。
+- 完成后端普通券模型、枚举、用户/管理员 API、领取/锁券/核销/取消释放以及订单创建 DTO/服务联动；完成用户优惠券页、结算页券选择/金额展示、后台优惠管理页/路由/API。未接入禁止的秒杀、Lua、Redis Stream、全局领取锁、WebSocket、商品缓存或报表。
+- 未完成 `CouponOrderIntegrationTest`：不能把未执行候选迁移和未运行测试环境伪造成覆盖。待人工迁移后须补齐 18 个指定场景并运行用户指定 Maven 命令。
+- 验证：指定 Maven 专项命令执行一次即因 `Q:\.m2` Access is denied 停止，未到编译或 Surefire；因此未运行后端 package。前端 `D:/develop/NodeJS/npm.cmd run build` 执行一次，esbuild 因工作区上级目录读取受限且无法加载 `vite.config.js` 失败。
+- 未提交、未推送：专项不通过，按规则停止等待人工审核/迁移与环境恢复。
+
+## 2026-07-24 优惠券基础业务与普通订单使用
+
+- 已按用户书面授权仅执行一次 `git status -sb` 和 `git branch --show-current`：当前 `feature/coupon-foundation`，工作区干净。
+- 已读取指定优惠券/订单源码、前端骨架、设计/API 文档及候选迁移；未读取或审计宿舍、学籍、资产模块。
+- 已对本机 `qinghe_life` 执行只读 `information_schema` 查询：两张券表仍是旧字段，缺少本轮必需字段；未执行 DDL/DML/SQL 导入，下一步只生成候选人工迁移。
+- 已将本轮五阶段计划写入 `task_plan.md`，阶段 1 完成。当前进行阶段 2：在不触及无关模块的前提下实现 MySQL 普通领取与订单券生命周期。
+
+## 2026-07-24 订单超时取消与多实例任务锁：实施中
+
+- 已按本轮唯一开始检查确认 `feature/order-timeout-lock` 与干净工作区；未 fetch、pull、reset、rebase、clean 或执行 SQL。
+- 静态门禁已核对 `Order` 映射的 `payExpireTime`、`cancelTime`、`cancelReason`、`status`，以及候选迁移中的 `(status, pay_expire_time)`；实际结构仍以用户手工迁移/测试运行结果为准。
+- 已抽出 `OrderCancellationService`，用户取消与超时取消共享订单明细库存恢复及直接 `qh_operate_log` 写入；超时扫描服务不持有事务，而每笔 `cancelExpiredOrder` 由独立 Spring Bean 的 `REQUIRED` 事务执行。
+- 已增加配置化 Spring Task 和基于既有 `spring.redis` 配置的 Redisson 客户端。调度器只获取 `qh:lock:order:timeout-cancel`、触发扫描、并在当前线程持锁时释放；锁或 Redis 异常结束本轮，不会无锁扫描。
+- 指定 Maven 专项测试实际为 20 tests / 0 failures / 0 errors / 0 skipped，其中 `OrderTimeoutCancelIntegrationTest` 为 7/0/0/0，真实 Redis 与 Redisson 锁场景均通过。随后 `mvn -Dmaven.repo.local=Q:/.m2 -DskipTests package` 成功，编译 216 个主源码、26 个测试源码并生成 JAR。
+
 ## 2026-07-19 学籍异动、批量毕业与二维码批量管理：实施启动
 
 - 用户已授权从已完成的 `docs/academic-dorm-batch-audit.md` 实施本轮唯一里程碑；已重新读取 AGENTS、项目规格/总计划、审计、交接、现有计划/进度/发现、宿舍资产计划以及数据库、接口和页面设计。
@@ -535,3 +571,180 @@
 - 已仅修改 `DormAssetServiceImpl`：创建寝室和改名均在写入前按同一楼栋、同一寝室号查重，冲突返回 HTTP 409；未改表结构、SQL、学生入住、资产生成、二维码或学籍事务。
 - `mvn -Dtest=DormAssetIntegrationTest test` 已编译 204 个主源码和 23 个测试源码；运行因沙箱无法连接 `192.168.100.128:6379`，2 项测试均在 Redis 清理阶段报错，未进入重复寝室断言。未改 Redis 配置。
 - 已创建本地 Git 快照 `dd7149e fix: enforce dorm room number uniqueness`，仅提交服务修复和本轮规划记录；用户已有 `.gitignore` 修改保持未暂存、未提交。
+
+## 2026-07-23 订单生命周期状态模型与候选迁移
+
+- 已创建 `OrderStatus` 并以其 `PENDING_PAY` 编码替换普通订单创建和订单创建专项测试中的待支付魔法字符串；状态机只定义，不新增支付、取消、管理员、定时或前端功能。
+- 已创建候选人工迁移 `backend/src/main/resources/sql/order_lifecycle_schema_increment.sql`，并更新订单状态机、API、接口契约、数据库和订单设计文档。候选脚本未执行，`Order` 实体未添加新列。
+- 已确认 `Q:\backend` 与 `Q:\.m2` 均不存在，因此未运行用户指定 Maven compile 与 `OrderCreateIntegrationTest`。未修改 Redis 或 Maven 配置；验证待可访问 Redis 且具备指定路径的本机环境。
+
+## 2026-07-24 订单生命周期核心闭环
+
+- 真实库只读门禁通过；Q: 映射仅用于 Maven 短路径，未执行任何迁移 SQL。
+- 后端新增支付期限、用户订单读取、模拟支付、用户取消与精确库存回补、管理员固定流转、超时取消批处理/定时触发；订单创建原有金额、快照、条件扣库存和精确清车逻辑保持不变。
+- `mvn -Dmaven.repo.local=Q:\.m2 -Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest test`：13 tests、0 failures、0 errors、0 skipped（创建 5、生命周期 8）。
+- `mvn -Dmaven.repo.local=Q:\.m2 -DskipTests package`：成功，生成 `backend/target/qinghe-life-backend-1.0.0.jar`。
+- `D:/develop/NodeJS/npm.cmd run build`：成功，1736 modules；仅既有第三方 PURE 注释与大 chunk 警告。
+- 测试前缀用户、店铺、商品、订单、明细、购物车、地址残留计数均为 0。
+
+## 2026-07-24 普通优惠券基础模块：验证与收口
+
+- 真实 `qh_coupon/qh_user_coupon` 的集成测试映射验证通过；未运行迁移 SQL。`coupon_foundation_increment.sql` 已标记为用户人工完成结构后的保留参考。
+- 优惠券业务复核：普通领取使用 MySQL 事务和 `available_stock > 0` 条件扣减；用户券状态固定为 `AVAILABLE -> LOCKED -> USED`，主动/超时取消按过期状态回到 `AVAILABLE` 或转为 `EXPIRED`。订单仅接收 `userCouponId`，服务端计算 `discountAmount/payAmount`，且释放与库存恢复同一事务。
+- `mvn "-Dtest=OrderCreateIntegrationTest,OrderLifecycleIntegrationTest,OrderTimeoutCancelIntegrationTest,CouponOrderIntegrationTest" test` 实际为 40 tests、0 failures、0 errors、0 skipped；其中 `CouponOrderIntegrationTest` 为 20 项。随后 `mvn -DskipTests package` 成功，生成 `Q:\backend\target\qinghe-life-backend-1.0.0.jar`。
+- 首次前端 build 定位到 `AdminCouponView.vue` 的 `el-table-column` 缺失结束标签；只修复该模板标签后，真实 frontend 路径 build 成功（1741 modules）。`COUPON_ORDER_TEST_` 精确只读残留检查的 10 个表/范围均为 0。
+# 2026-07-24 Coupon duplicate-claim display and feedback
+
+- Restored project instructions, planning records, and coupon implementation context.
+- Audit complete: repeated claims are service-idempotent but have no explicit API state; available-list and client state do not display a claim.
+- Started from a clean worktree on `feature/coupon-foundation`; no branch was created, no SQL was executed, and no service was controlled.
+
+## 2026-07-24 Coupon duplicate-claim completion evidence
+
+- Backend: `CouponClaimVO.claimStatus` now distinguishes first success, already claimed, out of stock, not started, ended, and disabled. Existing claims are checked before availability validation and return their original `userCouponId` without decrementing stock or inserting a row.
+- List: one current-user `qh_user_coupon` read maps `claimed/userCouponId/userCouponStatus`; all four user-coupon states remain claimed across a refreshed list.
+- Frontend: claimed/in-flight cards are disabled; first success updates the card and displayed remaining stock immediately; a stale `ALREADY_CLAIMED` response shows the exact message and reloads the list.
+- Verification: requested `CouponOrderIntegrationTest` passed 22/0/0/0; requested Maven `-DskipTests package` and frontend production build both passed. No non-coupon tests or SQL were run.
+- Git: committed `1066b83 fix(coupon): prevent duplicate claims with clear user feedback`. The normal non-force push to `origin/feature/coupon-foundation` was attempted once and failed because GitHub port 443 could not connect through `127.0.0.1`; no retry, force-push, merge, or remote rewrite was performed.
+# 2026-07-24 Coupon seckill stream milestone - started
+
+- Confirmed the requested branch `feature/coupon-seckill-stream` and a clean working tree.
+- Restored the persistent planning workflow and began the limited coupon/Redis design audit; no application code, MySQL, Redis configuration, or SQL data has been changed.
+- Read-only schema verification confirmed the required `(user_id, coupon_id)` unique constraint is present. The implementation will use existing `coupon_status=SECKILL` as the explicit activity marker, avoiding an automatic schema migration.
+- Added the unverified seckill implementation and real-Redis-focused test source. The required targeted Maven test command stopped before compilation because Maven cannot create `Q:\.m2` (`Access is denied`). No package, Git commit, or push was performed.
+
+## 2026-07-24 Seckill consumer-group compatibility follow-up
+
+- Restored the active coupon-seckill milestone and inspected the current uncommitted implementation.
+- Confirmed the compile failure is isolated to `CouponSeckillServiceImpl.ensureGroup()`: Spring Data Redis 2.7.18 has no `StreamOperations.create(...)`; the low-level stream API exposes `xGroupCreate(..., mkStream)` for the required `MKSTREAM` behavior.
+- Next: apply the narrow group-creation compatibility fix, then rerun the exact user-specified focused Maven test.
+
+## 2026-07-24 Seckill consumer-group compatibility verification result
+
+- Implemented the compatible `xGroupCreate(streamKey bytes, consumerGroup, ReadOffset.from("0-0"), true)` call. `true` maps to Redis `MKSTREAM`; no synthetic business message, stream deletion, consumer-group deletion, Redis address/password change, or flush operation was used. `BUSYGROUP` is the only ignored group-creation error.
+- `mvn -DskipTests compile`: success, 236 main sources compiled. The original missing `StreamOperations.create` error is resolved.
+- `mvn "-Dtest=CouponOrderIntegrationTest,CouponSeckillStreamIntegrationTest" test`: attempted twice. Both runs stopped in `testCompile` before test execution because all integration tests could not resolve `com.qinghe.life.*` main packages. Read-only diagnostics confirmed `target/classes` includes `Coupon.class` and `javap` can load it; a further Maven diagnostic encountered an access denial under `D:\maven\apache-maven-3.9.11\Repository`.
+- Per the requested order, package, final Git diff checks, commit, and the one normal push were not performed after the focused test failed.
+
+## 2026-07-24 秒杀优惠券 Redis Stream：测试、打包与待 Git 收口
+
+- 使用用户指定的 Maven 本地仓库执行完整专项测试：`CouponOrderIntegrationTest` 22 项、`CouponSeckillStreamIntegrationTest` 7 项，合计 29 tests、0 failures、0 errors、0 skipped。
+- 后端 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，生成 `backend/target/qinghe-life-backend-1.0.0.jar`。本轮无前端改动，未执行 npm build。
+- 已更新 API、订单/优惠券/Redis 设计和交接文档，记录普通/秒杀领取分流、Lua 结果码、Redis Key、Stream Group、ACK、Pending 恢复、MySQL 条件库存更新和唯一约束。下一步仅为 Git 差异检查、提交和一次普通 push。
+
+## 2026-07-24 店铺与商品 Redis 热点缓存
+
+- 统一目录缓存组件、Key、TTL、空值、互斥重建、坏值删除、MySQL 降级和事务提交后失效已完成；库存和销量保持实时 MySQL 回源。
+- 首次专项测试为 12/1/0：不存在商品未写空值缓存。修复加载器返回 null 后，同一聚焦命令通过 12/0/0/0。
+- `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests package` 成功，生成后端 JAR；未运行前端或范围外测试。
+# 2026-07-24 — Order WebSocket notification milestone
+
+- Initial Git check (performed once as requested): current branch is `feature/order-websocket-notify`; worktree was clean.
+- Started a single WebSocket notification milestone plan. No implementation or Git write has occurred yet.
+- Inspected only the permitted order, authentication/context, Redis, Axios token, and user/admin order page code. Confirmed the post-commit event is the minimal backend integration point.
+- Added backend WebSocket implementation, frontend lifecycle support, and the focused test class. First requested Maven test attempt downloaded the new Spring WebSocket dependency and compiled main sources, then stopped at two incorrect test mock imports; corrected the imports before retrying.
+- Second focused Maven attempt compiled main code and exposed only test-helper type mismatches. The test now uses servlet handshake mocks and the production WebSocket message VO.
+- Third focused Maven attempt passed: 31 tests, 0 failures, 0 errors, 0 skipped; `OrderWebSocketIntegrationTest` contributed 16 passing scenarios.
+- Requested backend `-DskipTests package` passed. The first frontend build stopped at sandboxed esbuild file reads; the controlled real-path retry passed (1742 modules) with only non-blocking third-party PURE-comment and bundle-size warnings.
+- Updated only the requested API/order-design/handoff documentation plus planning records. Pending final Git diff audit, one commit, and one normal push.
+
+## 2026-07-26 V1.0 release closure
+
+- Restored AGENTS.md, project specification, plan, progress, findings, and release handoff context. The user-authorized initial Git check was executed once: `chore/release-v1.0` with a clean worktree.
+- Created the release-closure plan in `task_plan.md`. Full backend regression is now in progress; no service, SQL, or Redis data operation has been performed.
+
+- First specified Maven attempt stopped during compilation because the sandbox could not read the existing `jackson-datatype-jsr310` JAR. The one controlled identical real-path retry compiled and ran 147 tests, reporting `1 failure / 0 errors / 0 skipped`.
+- The only failure was `DormAssetIntegrationTest`: its repeated-room assertion expected HTTP 409 while the established `BusinessException` transport contract returns HTTP 200 with body `code=409`. The test now asserts that contract and additionally asserts that exactly one `(building_id, room_no)` record exists; no production business logic, database data, Redis data, or schema was changed.
+- Two diagnostic-command issues were recorded: a source/target `rg` command referenced `docs` from the backend directory, and a first PowerShell regex command had quote parsing errors. Neither changed project files or runtime state.
+
+- Full regression after the duplicate-room/bed fixes passed: `147 tests / 0 failures / 0 errors / 0 skipped`. Backend `-DskipTests package` and frontend production build also passed; Vite reported only third-party PURE-comment and large-chunk warnings.
+- Security closure removed non-empty MySQL and Redis password defaults from `application.yml`. The required post-change full regression then failed with `125 errors`: Redis replied `NOAUTH Authentication required` because this process has no `REDIS_PASSWORD`. Per release constraints, no system environment variable was changed and no password was restored to source. Release verification, package-after-security-change, Git diff/commit, and push are blocked pending secure credential injection.
+# 2026-07-26 探店与附近店铺：阶段 1 开始
+
+- 已按用户要求执行 `git branch --show-current` 和 `git status -sb`：当前为 `feature/explore-discovery`，工作区干净。
+- 已恢复计划文件并开始限定范围审计；未读取或修改订单、优惠券、WebSocket、商品缓存、宿舍/学籍/资产业务实现，未执行 SQL。
+- 已确认探店页和后台内容入口均为占位实现；一次推断的管理报表前端 API 文件名不存在，已记录，下一步改按实际文件清单定位。
+- 后端主源码编译尝试：`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests compile` 在 282 个源码编译启动后被本地 Maven 依赖 JAR 的 `Access is denied` 阻断（`jackson-datatype-jsr310-2.13.5.jar`），尚未产生 Java 编译诊断；不以此作为代码验证成功。
+- 后端源码后续受控重试已成功（282 个源文件）。前端 `D:/develop/NodeJS/npm.cmd run build` 的受控真实路径重试成功（1751 modules）；仅有既有第三方 PURE 注释和包体积警告。
+- 完整 Maven 测试未收口：先修复了 `ShopCoverServiceTest` 因新增 GEO 依赖产生的 testCompile 构造器不兼容；重跑在 124 秒上限被终止。已生成的本轮 Surefire XML 显示至少 Address、管理员认证、宿舍楼和入住测试合计 11 个 Redis 启动错误，不能称为 0 failures/0 errors。
+- 尚未新增用户要求的三组 Explore 集成测试，未运行 package，未更新 README/API/数据库设计/交接/验收清单，也未执行 commit 或 push；本里程碑不能判定完成。
+
+# 2026-07-27 探店专项测试：开始
+
+- 仅继续现有 `feature/explore-discovery` 未提交实现，范围收敛为三个指定集成测试与测试揭示的真实缺陷；不重构、不提交、不推送、不更新最终发布文档。
+- 已确认现有集成测试使用真实 Redis/MySQL、MockMvc、Redis 会话 Hash 和 marker 精确清理。Redis ZSet/GEO 降级将使用真实 Redis 的本轮精确 Key 写入错误类型以触发 `WRONGTYPE`，不用 Mock、FLUSHDB 或服务控制。
+- 已新增 `ExploreIntegrationTest`（4 项）、`ExploreInteractionIntegrationTest`（3 项）和 `ExploreNearbyShopIntegrationTest`（3 项），均通过 `ExploreTestSupport` 使用真实 Redis/MySQL、独立 marker 和精确 Key/关联 ID 清理；未使用 Mock Redis、FLUSHDB、TRUNCATE 或无条件 DELETE。
+- 第一次专项 testCompile 暴露测试夹具 `post(...)` 与 MockMvc 静态 `post(...)` 同名冲突；已最小化改名为 `seedPost(...)`，不涉及业务代码。第二次指定专项命令完成编译并启动 10 项测试，但 Spring 上下文创建因 Redis 数据库 2 返回 `NOAUTH Authentication required` 而全部 errors；未进入业务断言。
+- 本轮实际专项结果：10 tests、0 failures、10 errors、0 skipped。Redis 凭据/环境不在本轮授权范围内，未修改配置、密码或服务，未运行全量测试、未提交、未推送。
+
+# 2026-07-27 ShopServiceImpl 构造器注入修复
+
+- 根因确认：`ShopServiceImpl` 同时保留 9 参数生产构造器与 8 参数测试兼容构造器，且没有 `@Autowired`，Spring 因此不能确定注入构造器并尝试无参构造，触发 `No default constructor found`。
+- 已删除 8 参数兼容构造器；唯一的 9 参数构造器显式标注 `@Autowired` 并保留全部必需依赖。未增加无参构造器，未改业务规则、Redis/数据库密码或环境变量。两处 `ShopCoverServiceTest` 直接实例化调整为显式提供 `ShopGeoService` mock。
+- 原三组专项测试已重新编译并进入 Surefire，`ShopServiceImpl` 构造器错误不再出现；当前 10 项均在 Redisson 连接 Redis database 2 时因 `NOAUTH Authentication required` 出错（0 failures / 10 errors / 0 skipped）。未重试或修改认证配置，未提交、未推送。
+## 2026-07-27 探店专项测试：业务缺口修复，验证受环境阻断
+
+- 已收敛匿名访问：仅 `GET /api/explore/posts`、`GET /api/explore/posts/{id}`、`GET /api/explore/posts/{id}/comments` 和 `GET /api/explore/shops/nearby` 可匿名访问；同路径的写操作不在白名单内。
+- 非作者修改/删除的 `BusinessException(403)` 现在返回 HTTP 403；拦截器拒绝的未登录写操作返回 HTTP 401。
+- 三个探店集成测试共 10 个用例维持真实 Redis/MySQL 路径；测试前后精确删除 `qh:geo:shop` 与 `qh:zset:explore:hot`，WRONGTYPE 场景在 `finally` 中立即清理，不使用 FLUSHDB、TRUNCATE 或无条件 DELETE。
+- 已运行指定 Maven clean 专项测试。主代码与测试代码已完成编译，但 Spring 上下文连接 Redis 数据库 2 时出现 `RedisAuthRequiredException: NOAUTH Authentication required`；平台随后在 64 秒时终止。已生成的 `ExploreIntegrationTest` 为 4 tests / 0 failures / 4 errors / 0 skipped；其余 6 个用例未启动。未修改 Redis 或数据库凭据，未 commit、未 push。
+## 2026-07-28 探店图片 OSS 上传：审计完成
+
+- 已开始本轮 OSS 上传改造，仅审计并确认可复用的后端 OSS 操作器与现有前端探店表单；尚未修改业务实现或运行构建。
+
+## 2026-07-28 探店图片 OSS 上传：实现与验证
+
+- 新增受登录保护的 `POST /api/explore/images`，复用 `AliyunOSSOperator` 上传到 `qinghe-life-service/explore/YYYY/MM/<UUID>.<ext>`；后端限制 jpg/jpeg/png/webp、单张 5MB，并校验扩展名、MIME 类型和文件签名。
+- 探店发布弹窗已替换为 Element Plus 图片卡片上传：点击/拖拽、9 张上限、进度、预览、删除与失败状态；发布只提交上传成功 URL，取消/关闭/发布成功均清理本地文件列表。
+- `D:/develop/NodeJS/npm.cmd run build` 成功，Vite 生产构建完成；仅有既有的大 chunk 警告。
+- 新增 `ExploreImageUploadIntegrationTest`（未登录、非图片、超 5MB、成功 URL 与目录前缀）。相关 12 个探店测试均完成编译，但 Spring 上下文因 `RedisAuthRequiredException: NOAUTH Authentication required` 无法创建，未进入接口断言；未改动 Redis 凭据或环境变量。
+- 最终扩展名与文件签名一致性校验后已重新执行同一专项命令，源码和测试再次完成编译；12 个用例仍全部在同一 Redis 认证阻断前失败。
+
+# 2026-07-31 Explore Social Phase：阶段 1 审计完成
+
+- 已确认当前探店实现为 `qh_explore_post`、`qh_explore_like`、`qh_explore_comment`；点赞表有 `(post_id,user_id)` 唯一索引和 `created_at`，点赞/取消点赞均在 `ExploreServiceImpl` 的数据库事务内，并在事务提交后更新独立热门 ZSet。
+- 帖子作者字段为 `user_id`，公开查询仅返回 `post_status=PUBLISHED`；后台使用 `PUBLISHED`、`DISABLED`、`DELETED`。当前没有审核拒绝的单独状态，后续 Feed 将只接收/展示 `PUBLISHED`。
+- 当前 Redis namespace 由 `RedisNamespaceConfiguration` 注入 `RedisKeys`，运行默认值为 `qh:dev:`；当前 `ExplorePostVO` 只有作者昵称/头像、完整点赞数与 `liked`，没有点赞用户列表。前端 `BlogsView.vue` 仅有最新/热门与附近，个人中心适合放置签到入口。
+- 当前没有关注、共同关注、签到或安全公共用户 VO；`UserContext.getUserId()` 是项目中等价于需求 UserHolder 的受登录拦截器保障的身份来源。未执行 SQL、真实 Redis/MySQL、真实 HTTP、Git 或业务写入。
+
+# 2026-07-31 Explore Social Phase：实现与验证
+
+- 已新增候选 `qh_follow` 迁移（未执行）、单向关注 Service/Controller、公开安全用户 VO、Redis Set 缓存重建/共同关注回退、Bitmap 签到、点赞用户 ZSet 重建和关注 Feed 推送、回填、有限清理、滚动游标、惰性过滤及容量裁剪。
+- 探店发布、点赞、取消点赞和关注写操作均先提交 MySQL，再在提交后维护派生 Redis；Redis 失败只记录低基数指标/日志，不回滚事实写入。发布 Feed 投递使用 Redis Pipeline。
+- 前端新增探店“推荐/热门/关注”页签、关注动态加载、作者关注按钮、最早点赞用户头像，以及个人中心签到状态、日历和幂等按钮；未改管理员探店审核页面。
+- 已新增 2 个默认离线测试类、6 项测试，`mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" "-Dtest=SignInServiceImplTest,ExploreSocialContractTest" test` 为 6/0/0/0。后端指定 compile 成功；前端 build 成功（1778 modules，仅既有第三方 PURE 注释/大包提示）。
+- 未执行全量测试、真实 Redis/MySQL/HTTP 联调、SQL、服务控制、Git 或真实业务写入。完整 45 项社交业务矩阵仍需后续补齐 Mock 测试并在人为批准的独立 namespace 环境联调。
+
+# 2026-07-31 Explore Social Phase 2 — 启动记录
+
+- 用户明确要求继续验收和加固探店社交功能；已按要求执行只读 Git 基线检查：当前分支为 `feature/explore-social`，工作区已有本功能相关未提交改动。
+- 已恢复 `AGENTS.md`、`docs/PROJECT_SPEC.md`、`PROJECT_PLAN.md`、`task_plan.md`、`progress.md` 和 `findings.md`；本轮仅执行一个 Phase 2 里程碑。
+- 当前阶段 1（基线、边界与静态审查）进行中；尚未执行 SQL、未连接 Redis/MySQL、未调用业务接口、未启动/停止服务，亦未执行任何 Git 写操作。
+
+# 2026-07-31 Explore Social Phase 2 — 完成记录
+
+- 静态审查并修复：关注/粉丝列表改用数据库分页；关注 Redis 更新失败补充低基数指标；Feed 改为 200 粉丝分页 Pipeline、保留最新容量并修正滚动游标；点赞用户 ZSet 使用 `v2` Key 与点赞 ID 稳定成员；签到近 12 月窗口包含当前月；前端防重、去重、页签竞态/卸载忽略和上海月份计算已加固。
+- 新增 `ExploreSocialPhase2StaticSafetyTest`（65 个 DynamicTest）和默认禁用的 `RealSocialIntegrationReservedTest`；现有 `SignInServiceImplTest`、`ExploreSocialContractTest` 同时运行。最终社交离线结果：72 run、71 passed、0 failed、0 errors、1 skipped（仅环境开关保护的真实入口）。其中 65 项为静态安全契约检查，不能替代用户要求的 45 项 Mockito/Mock Mapper 业务行为矩阵；因此本轮结论为不可进入真实联调。
+- `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests compile` 最终成功；`D:/develop/NodeJS/npm.cmd run build` 最终成功（1778 modules，只有既有第三方 PURE/bundle-size 警告）。
+- 未执行 SQL、未连接 Redis/MySQL/网络、未调用真实业务接口、未启动/停止服务、未修改 `agent-service/`、订单、支付或秒杀；未执行 Git 写操作。
+
+# 2026-07-31 Explore Social Phase 2 — 离线业务行为测试第一批
+
+- 已新增 `SignInServiceBehaviorTest`，以 Mock `StringRedisTemplate`、`ValueOperations` 和 Redis connection 实际调用 `SignInServiceImpl`。新增场景覆盖首次 SETBIT/day-1 偏移、重复签到、GETBIT 状态、BITCOUNT、连续位、漏签中断、未签到 0、跨月 Key、未来/非法月份拒绝，以及 status/calendar Redis 异常映射 503。
+- 目标命令首次在受限环境的 testCompile 阶段出现既有主类解析错误并以 `Access is denied` 结束；受控重试可完成编译。新测试首次有 2 项失败，根因是夹具未为 `signIn()` 后的 summary GETBIT 配置返回值；修正 Mock 后重跑 `mvn "-Dtest=SignInServiceImplTest,SignInServiceBehaviorTest" test` 成功：16 run、16 passed、0 failed、0 errors、0 skipped。
+- 本批新增/修改：`backend/src/test/java/com/qinghe/life/SignInServiceBehaviorTest.java`、`docs/explore-social/15-behavior-test-matrix.md`、`task_plan.md`、`progress.md`、`findings.md`、`PROJECT_PLAN.md`。未连接 Redis/MySQL，未执行 SQL。
+
+# 2026-07-31 Explore Social Phase 2 — 离线业务行为测试第二批
+
+- 已新增 `FollowServiceBehaviorTest` 14 项和 `CommonFollowBehaviorTest` 4 项。所有场景直接调用 `FollowServiceImpl`，Mock Follow/User Mapper、StringRedisTemplate、SetOperations、Redisson RLock 和 Feed Service。
+- 覆盖数据库成功后才在事务 afterCommit 写 SADD/SREM、重复关注/取消幂等、自关注/不存在目标拒绝、派生缓存失败但事实结果保留、空集合 loaded 标识、数据库重建、锁失败回退、关注/粉丝分页、计数、SINTER、MySQL 回退和实际 VO JSON 无 phone/passwordHash。
+- 首次运行有 5 项夹具失败：Redis varargs Mock 未匹配、锁未声明持有状态、列表未布置当前用户查询；均已修正，未发现生产缺陷。重跑 `mvn "-Dtest=FollowServiceBehaviorTest,CommonFollowBehaviorTest" test`：18 run、18 passed、0 failed、0 errors、0 skipped。
+- 本批新增/修改：`backend/src/test/java/com/qinghe/life/FollowServiceBehaviorTest.java`、`backend/src/test/java/com/qinghe/life/CommonFollowBehaviorTest.java`、`docs/explore-social/15-behavior-test-matrix.md`、`task_plan.md`、`progress.md`、`findings.md`、`PROJECT_PLAN.md`。未连接 Redis/MySQL，未执行 SQL。
+
+# 2026-07-31 Explore Social Phase 2 — 离线业务行为测试第三、四批与收口
+
+- 第三批新增 `ExploreTopLikersBehaviorTest`，目标命令通过 10/0/0/0：验证 ZADD NX/ZREM、最早五人、created_at/id 稳定成员、缓存重建、Redis→MySQL 回退、空 loaded、公开用户字段和登录/匿名 likedByMe。
+- 第四批新增 `FollowingFeedBehaviorTest`，初次 15/0/0/0；随后将分批场景强化为 200+1 粉丝两次 Pipeline。最终全部离线社交命令再次验证该场景通过，覆盖提交后推送、无/非公开帖子、member、容量裁剪、游标/同时间 offset、顺序、惰性过滤、MySQL 回退和回填。
+- 最终后端命令 `mvn "-Dmaven.repo.local=C:/Users/28402/.m2/repository" -DskipTests compile` 成功。全部社交离线测试为 127 run、126 passed、0 failed、0 errors、1 skipped：Mockito 业务行为 59 passed，DynamicTest 静态审计 65 passed，普通静态契约 2 passed，真实集成入口 1 skipped。前端 `D:/develop/NodeJS/npm.cmd run build` 成功（1778 modules；既有 PURE/bundle-size 警告）。
+- SQL 仅静态读取 `explore_social_increment.sql`：只创建 MySQL 8 `qh_follow`，无 DROP/TRUNCATE/数据修改，唯一键和两条索引存在，已有表时必须停止人工比对、脚本最多人工执行一次。未执行 SQL，未连接 Redis/MySQL/网络，未启动服务，未修改 agent-service、订单、支付、秒杀或管理端。
+- 本批新增/修改：`backend/src/test/java/com/qinghe/life/ExploreTopLikersBehaviorTest.java`、`backend/src/test/java/com/qinghe/life/FollowingFeedBehaviorTest.java`、`docs/explore-social/08-test-report.md`、`docs/explore-social/09-manual-integration-checklist.md`、`docs/explore-social/14-release-readiness.md`、`docs/explore-social/15-behavior-test-matrix.md`、`docs/explore-social/16-phase2-test-completion.md`、`task_plan.md`、`progress.md`、`findings.md`、`PROJECT_PLAN.md`。本轮没有生产代码修改。

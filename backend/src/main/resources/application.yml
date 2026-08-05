@@ -10,12 +10,12 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/qinghe_life?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: ${MYSQL_PASSWORD:1234}
+    password: ${MYSQL_PASSWORD:}
   redis:
     host: ${REDIS_HOST:192.168.100.128}
     port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:123321}
-    database: 2
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DATABASE:2}
     lettuce:
       pool:
         max-active: 10
@@ -35,7 +35,60 @@ mybatis-plus:
       id-type: auto
 
 qinghe:
-  redis-key-prefix: "qh:"
+  redis:
+    # Changing namespace invalidates old cache/session keys; it never deletes them.
+    namespace: ${QINGHE_REDIS_NAMESPACE:qh:dev:}
+  explore:
+    feed:
+      max-size: 1000
+      page-size: 10
+      backfill-size: 20
+
+catalog:
+  cache:
+    shop-ttl-minutes: 30
+    goods-ttl-minutes: 20
+    list-ttl-minutes: 10
+    null-ttl-minutes: 2
+    ttl-jitter-minutes: 5
+    lock-wait-millis: 100
+    lock-max-retries: 3
+    evict-max-retries: 2
+    evict-retry-millis: 25
+
+order:
+  payment-timeout-minutes: 15
+  timeout:
+    enabled: true
+    cron: "0 * * * * ?"
+    batch-size: 100
+    max-batches-per-run: 10
+    lock-wait-seconds: 0
+
+coupon:
+  seckill:
+    consumer-group: coupon-seckill-group
+    consumer-name: ${COUPON_SECKILL_CONSUMER:coupon-seckill-${HOSTNAME:local}-${random.uuid}}
+    consume-enabled: true
+    consume-delay-millis: 500
+    consume-batch-size: 20
+    pending-recovery-enabled: true
+    pending-recovery-cron: "*/15 * * * * ?"
+    pending-min-idle-seconds: 30
+    pending-batch-size: 20
+    max-retries: 3
+    retry-base-delay: 2s
+    retry-max-delay: 30s
+    retry-ttl-seconds: 86400
+    reservation-ttl-seconds: 604800
+    dlq-index-ttl-seconds: 2592000
+    stream-max-suggested-length: 100000
+    stream-alert-length: 80000
+    stream-retention-hours: 168
+    dlq-max-suggested-length: 50000
+    dlq-alert-length: 40000
+    dlq-retention-hours: 720
+    pending-lock-wait-seconds: 0
 
 aliyun:
   oss:

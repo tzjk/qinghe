@@ -22,12 +22,17 @@ import AdminStudentAcademicView from '../views/AdminStudentAcademicView.vue'
 import AdminShopView from '../views/AdminShopView.vue'
 import AdminGoodsView from '../views/AdminGoodsView.vue'
 import AdminGoodsCategoryView from '../views/AdminGoodsCategoryView.vue'
+import AdminOrderView from '../views/AdminOrderView.vue'
+import AdminCouponView from '../views/AdminCouponView.vue'
+import AdminBusinessReportView from '../views/AdminBusinessReportView.vue'
+import AdminExploreView from '../views/AdminExploreView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminLoginView from '../views/AdminLoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import InitialProfileView from '../views/InitialProfileView.vue'
 import DormScanView from '../views/DormScanView.vue'
 import DormMeView from '../views/DormMeView.vue'
+import AgentAssistantView from '../views/AgentAssistantView.vue'
 
 const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/login', name: 'login', component: LoginView, meta: { title: '登录' } },
@@ -47,7 +52,8 @@ const router = createRouter({ history: createWebHistory(), routes: [
     { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '我的', requiresUser: true } },
     { path: 'dorm/scan', name: 'dorm-scan', component: DormScanView, meta: { title: '扫码入住', requiresUser: true } },
     { path: 'dorm/me', name: 'dorm-me', component: DormMeView, meta: { title: '我的宿舍', requiresUser: true } },
-    { path: 'profile/addresses', name: 'addresses', component: AddressView, meta: { title: '我的地址', requiresUser: true } }
+    { path: 'profile/addresses', name: 'addresses', component: AddressView, meta: { title: '我的地址', requiresUser: true } },
+    { path: 'assistant', name: 'assistant', component: AgentAssistantView, meta: { title: '校园助手' } }
   ] },
   { path: '/admin', component: AdminLayout, meta: { requiresAdmin: true }, children: [
     { path: '', name: 'admin-dashboard', component: AdminDashboardView, meta: { title: '后台', requiresAdmin: true } },
@@ -55,11 +61,11 @@ const router = createRouter({ history: createWebHistory(), routes: [
     { path: 'shops', name: 'admin-shops', component: AdminShopView, meta: { title: '商铺管理', requiresAdmin: true } },
     { path: 'goods', name: 'admin-goods', component: AdminGoodsView, meta: { title: '商品管理', requiresAdmin: true } },
     { path: 'goods/categories', name: 'admin-goods-categories', component: AdminGoodsCategoryView, meta: { title: '商品分类', requiresAdmin: true } },
-    { path: 'orders', component: AdminResourceView, meta: { title: '订单管理', requiresAdmin: true } },
-    { path: 'coupons', component: AdminResourceView, meta: { title: '优惠管理', requiresAdmin: true } },
+    { path: 'orders', name: 'admin-orders', component: AdminOrderView, meta: { title: '订单管理', requiresAdmin: true } },
+    { path: 'coupons', name: 'admin-coupons', component: AdminCouponView, meta: { title: '优惠管理', requiresAdmin: true } },
+    { path: 'reports', name: 'admin-reports', component: AdminBusinessReportView, meta: { title: '营业报表', requiresAdmin: true } },
+    { path: 'explore', name: 'admin-explore', component: AdminExploreView, meta: { title: '探店管理', requiresAdmin: true } },
     { path: 'users', component: AdminResourceView, meta: { title: '用户查询', requiresAdmin: true } },
-    { path: 'blogs', component: AdminResourceView, meta: { title: '内容管理', requiresAdmin: true } },
-    { path: 'comments', component: AdminResourceView, meta: { title: '评论管理', requiresAdmin: true } },
     { path: 'dorm', name: 'admin-dorm', component: AdminDormAssetView, meta: { title: '宿舍基础管理', requiresAdmin: true } }
     ,{ path: 'dorm/students', name: 'admin-dorm-students', component: AdminStudentAcademicView, meta: { title: '学生学籍', requiresAdmin: true } }
     ,{ path: 'dorm/checkins', name: 'admin-dorm-checkins', component: AdminDormCheckinView, meta: { title: '入住管理', requiresAdmin: true } }
