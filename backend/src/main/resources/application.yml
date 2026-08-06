@@ -14,6 +14,7 @@ spring:
   redis:
     host: ${REDIS_HOST:192.168.100.128}
     port: ${REDIS_PORT:6379}
+    username: ${REDIS_USERNAME:}
     password: ${REDIS_PASSWORD:}
     database: ${REDIS_DATABASE:2}
     lettuce:
@@ -55,6 +56,9 @@ catalog:
     lock-max-retries: 3
     evict-max-retries: 2
     evict-retry-millis: 25
+    # Shop detail is the only logical-expiry hot key. Its Redis TTL remains a hard fallback.
+    hot-shop-logical-ttl-minutes: 10
+    hot-shop-physical-ttl-minutes: 60
 
 order:
   payment-timeout-minutes: 15
@@ -72,6 +76,7 @@ coupon:
     consume-enabled: true
     consume-delay-millis: 500
     consume-batch-size: 20
+    stream-block-millis: 2000
     pending-recovery-enabled: true
     pending-recovery-cron: "*/15 * * * * ?"
     pending-min-idle-seconds: 30
@@ -81,6 +86,7 @@ coupon:
     retry-max-delay: 30s
     retry-ttl-seconds: 86400
     reservation-ttl-seconds: 604800
+    order-status-ttl-seconds: 604800
     dlq-index-ttl-seconds: 2592000
     stream-max-suggested-length: 100000
     stream-alert-length: 80000

@@ -25,7 +25,7 @@ class RedisHardeningUnitTest {
     }
     @Test void namespaceIsCentralizedAndCanSeparateEnvironments() {
         RedisKeys.configureNamespace("qh:test"); assertEquals("qh:test:", RedisKeys.namespace());
-        assertEquals("qh:test:stream:coupon:claim", RedisKeys.couponSeckillStream());
+        assertEquals("qh:test:stream:seckill-orders", RedisKeys.couponSeckillStream());
         assertEquals("qh:test:login:token:abc", RedisKeys.token("abc"));
     }
     @Test void metricsUseOnlyLowCardinalityDimensions() {
@@ -33,17 +33,17 @@ class RedisHardeningUnitTest {
         metrics.count("stream_dlq_total", "seckill", "dlq", "success", "none");
         assertEquals(1L, metrics.value("stream_dlq_total", "seckill", "dlq", "success", "none"));
     }
-    @Test void classifierMakesInvalidAndConfirmedBusinessFailuresNonRetryable() {
+    @Test void classifierKeepsDatabaseBusinessFailuresPendingButRejectsInvalidMessages() {
         SeckillStreamErrorClassifier classifier = new SeckillStreamErrorClassifier();
         assertFalse(classifier.classify(new IllegalArgumentException()).isRetryable());
-        assertFalse(classifier.classify(new BusinessException(409, "confirmed")).isRetryable());
+        assertTrue(classifier.classify(new BusinessException(409, "confirmed")).isRetryable());
         assertTrue(classifier.classify(new IllegalStateException("temporary")).isRetryable());
     }
     @Test void claimLuaPreflightsTypesAndRollsBackAfterXaddFailure() throws Exception {
-        String lua = resource("lua/coupon-seckill-claim.lua");
+        String lua = resource("lua/seckill_coupon.lua");
         assertTrue(lua.contains("redis.call('TYPE'")); assertTrue(lua.contains("redis.pcall('XADD'"));
         assertTrue(lua.contains("redis.call('SREM'")); assertTrue(lua.contains("redis.call('INCR'"));
-        assertTrue(lua.contains("'messageStatus', 'ENQUEUED'"));
+        assertTrue(lua.contains("'status', 'ACCEPTED'"));
     }
     @Test void dlqLuaUsesOriginalMessageIdIndexBeforeAcknowledgementCanOccur() throws Exception {
         String lua = resource("lua/coupon-seckill-dlq.lua");

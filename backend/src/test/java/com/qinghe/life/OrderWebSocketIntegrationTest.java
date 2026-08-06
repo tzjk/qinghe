@@ -133,8 +133,18 @@ class OrderWebSocketIntegrationTest {
     }
 
     @Test
+    void orderCreationNotificationIsSentAfterCommitToAdministrators() throws Exception {
+        assertAdminCommittedMessage(OrderNotificationReason.CREATED, OrderStatus.PENDING_PAY, "ADMIN_NEW_ORDER");
+    }
+
+    @Test
     void paymentNotificationIsSentAfterCommit() throws Exception {
         assertCommittedMessage(OrderNotificationReason.PAID, OrderStatus.PAID, "ORDER_PAID");
+    }
+
+    @Test
+    void reminderNotificationIsSentAfterCommitToAdministrators() throws Exception {
+        assertAdminCommittedMessage(OrderNotificationReason.USER_REMINDER, OrderStatus.PAID, "ADMIN_ORDER_REMINDER");
     }
 
     @Test
@@ -203,6 +213,18 @@ class OrderWebSocketIntegrationTest {
         verify(target).sendMessage(payload.capture());
         assertTrue(payload.getValue().getPayload().contains("\"messageType\":\"" + expectedType + "\""));
         handler.afterConnectionClosed(target, CloseStatus.NORMAL);
+    }
+
+    private void assertAdminCommittedMessage(OrderNotificationReason reason, OrderStatus status, String expectedType) throws Exception {
+        long adminId = IDS.incrementAndGet();
+        WebSocketSession administrator = session("ADMIN_COMMIT_" + adminId, "ADMIN", adminId);
+        handler.afterConnectionEstablished(administrator);
+        transactionTemplate.executeWithoutResult(ignored ->
+                notificationPublisher.publishAfterCommit(order(IDS.incrementAndGet(), status), reason));
+        ArgumentCaptor<TextMessage> payload = ArgumentCaptor.forClass(TextMessage.class);
+        verify(administrator).sendMessage(payload.capture());
+        assertTrue(payload.getValue().getPayload().contains("\"messageType\":\"" + expectedType + "\""));
+        handler.afterConnectionClosed(administrator, CloseStatus.NORMAL);
     }
 
     private boolean handshake(String path, String protocol, Map<String, Object> attributes) {

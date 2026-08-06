@@ -60,6 +60,7 @@ class CatalogCacheIntegrationTest {
     @Autowired private CatalogCache catalogCache;
     @Autowired private CatalogCacheProperties cacheProperties;
     @Autowired private StringRedisTemplate redis;
+    @Autowired private ObjectMapper objectMapper;
     @Autowired private AdminMapper adminMapper;
     @Autowired private CategoryMapper categoryMapper;
     @Autowired private ShopMapper shopMapper;
@@ -123,8 +124,8 @@ class CatalogCacheIntegrationTest {
         assertTrue(Boolean.TRUE.equals(redis.hasKey(RedisKeys.goodsDetail(goods.getId()))));
         assertTrue(Boolean.TRUE.equals(redis.hasKey(RedisKeys.shopGoods(shopA.getId()))));
         Long shopTtl = redis.getExpire(RedisKeys.shopDetail(shopA.getId()), TimeUnit.MINUTES);
-        assertTrue(shopTtl != null && shopTtl >= cacheProperties.getShopTtlMinutes()
-                && shopTtl <= cacheProperties.getShopTtlMinutes() + cacheProperties.getTtlJitterMinutes());
+        assertTrue(shopTtl != null && shopTtl > cacheProperties.getHotShopLogicalTtlMinutes()
+                && shopTtl <= cacheProperties.getHotShopPhysicalTtlMinutes());
         String cachedBefore = redis.opsForValue().get(RedisKeys.goodsDetail(goods.getId()));
         mvc.perform(get("/api/goods/{id}", goods.getId())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.name").value(goods.getName()));
@@ -133,9 +134,9 @@ class CatalogCacheIntegrationTest {
         Set<Long> observedTtls = new HashSet<Long>();
         for (long id = 910000L; id < 910012L; id++) {
             final long currentId = id;
-            catalogCache.getObject(RedisKeys.shopDetail(currentId), RedisKeys.shopLock(currentId), String.class,
-                    cacheProperties.getShopTtlMinutes(), () -> "ttl-" + currentId);
-            observedTtls.add(redis.getExpire(RedisKeys.shopDetail(currentId), TimeUnit.MINUTES));
+            catalogCache.getObject(RedisKeys.goodsDetail(currentId), RedisKeys.goodsLock(currentId), String.class,
+                    cacheProperties.getGoodsTtlMinutes(), () -> "ttl-" + currentId);
+            observedTtls.add(redis.getExpire(RedisKeys.goodsDetail(currentId), TimeUnit.MINUTES));
         }
         assertTrue(observedTtls.size() > 1, "正常缓存 TTL 应有随机抖动");
     }
@@ -160,40 +161,33 @@ class CatalogCacheIntegrationTest {
     }
 
     @Test
-    void concurrentHotKeysAreRebuiltOncePerKeyAndDifferentKeysDoNotShareLocks() throws Exception {
+    void concurrentExpiredHotKeysReturnStaleDataAndRebuildOnlyOnce() throws Exception {
         long firstId = 930001L;
-        long secondId = 930002L;
-        AtomicInteger firstLoads = new AtomicInteger();
-        AtomicInteger secondLoads = new AtomicInteger();
+        String key = RedisKeys.shopDetail(firstId);
+        putExpiredHotValue(key, "stale");
+        AtomicInteger rebuildLoads = new AtomicInteger();
         ExecutorService pool = Executors.newFixedThreadPool(6);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<String>> futures = new ArrayList<Future<String>>();
         for (int i = 0; i < 6; i++) {
             futures.add(pool.submit(() -> {
                 start.await();
-                return catalogCache.getObject(RedisKeys.shopDetail(firstId), RedisKeys.shopLock(firstId), String.class,
-                        cacheProperties.getShopTtlMinutes(), () -> {
-                            firstLoads.incrementAndGet();
-                            sleep(80L);
-                            return "first";
-                        });
+                return catalogCache.getHotObject(key, RedisKeys.shopLock(firstId), String.class, () -> {
+                    rebuildLoads.incrementAndGet();
+                    sleep(100L);
+                    return "fresh";
+                });
             }));
         }
         start.countDown();
         for (Future<String> future : futures) {
-            assertEquals("first", future.get(3, TimeUnit.SECONDS));
+            assertEquals("stale", future.get(3, TimeUnit.SECONDS));
         }
-        assertEquals(1, firstLoads.get());
-
-        CountDownLatch parallelStart = new CountDownLatch(1);
-        Future<String> first = pool.submit(() -> { parallelStart.await(); return catalogCache.getObject(RedisKeys.shopDetail(firstId + 10), RedisKeys.shopLock(firstId + 10), String.class, cacheProperties.getShopTtlMinutes(), () -> { firstLoads.incrementAndGet(); sleep(120L); return "a"; }); });
-        Future<String> second = pool.submit(() -> { parallelStart.await(); return catalogCache.getObject(RedisKeys.shopDetail(secondId), RedisKeys.shopLock(secondId), String.class, cacheProperties.getShopTtlMinutes(), () -> { secondLoads.incrementAndGet(); sleep(120L); return "b"; }); });
-        long started = System.nanoTime();
-        parallelStart.countDown();
-        assertEquals("a", first.get(3, TimeUnit.SECONDS));
-        assertEquals("b", second.get(3, TimeUnit.SECONDS));
-        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < 230L, "不同 ID 的锁不应串行等待");
-        assertEquals(1, secondLoads.get());
+        awaitFreshHotValue(key, "fresh");
+        assertEquals(1, rebuildLoads.get());
+        Long ttl = redis.getExpire(key, TimeUnit.MINUTES);
+        assertTrue(ttl != null && ttl > cacheProperties.getHotShopLogicalTtlMinutes()
+                && ttl <= cacheProperties.getHotShopPhysicalTtlMinutes());
         pool.shutdownNow();
     }
 
@@ -251,6 +245,30 @@ class CatalogCacheIntegrationTest {
         mvc.perform(get("/api/shops/{id}/goods", shopB.getId()).param("page", "1").param("size", "20")).andExpect(status().isOk());
     }
 
+    private void putExpiredHotValue(String key, String data) throws Exception {
+        CatalogCache.LogicalCacheValue<String> value = new CatalogCache.LogicalCacheValue<String>();
+        value.setData(data);
+        value.setLogicalExpireTime(System.currentTimeMillis() - 1_000L);
+        redis.opsForValue().set(key, objectMapper.writeValueAsString(value),
+                cacheProperties.getHotShopPhysicalTtlMinutes(), TimeUnit.MINUTES);
+    }
+
+    private void awaitFreshHotValue(String key, String expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3L);
+        while (System.nanoTime() < deadline) {
+            String raw = redis.opsForValue().get(key);
+            if (raw != null) {
+                CatalogCache.LogicalCacheValue<?> value = objectMapper.readValue(raw, CatalogCache.LogicalCacheValue.class);
+                if (expected.equals(value.getData()) && value.getLogicalExpireTime() != null
+                        && value.getLogicalExpireTime() > System.currentTimeMillis()) {
+                    return;
+                }
+            }
+            sleep(10L);
+        }
+        assertTrue(false, "logical-expiry cache was not asynchronously rebuilt within three seconds");
+    }
+
     private Shop newShop(String name) {
         Shop value = new Shop();
         value.setName(name);
@@ -281,7 +299,7 @@ class CatalogCacheIntegrationTest {
                 shopMapper.deleteById(item.getId());
             }
         }
-        for (long id = 910000L; id < 910012L; id++) redis.delete(RedisKeys.shopDetail(id));
+        for (long id = 910000L; id < 910012L; id++) redis.delete(RedisKeys.goodsDetail(id));
         for (long id : new long[] {920001L, 920002L, 930001L, 930002L, 930011L, 940001L}) {
             redis.delete(Arrays.asList(RedisKeys.shopDetail(id), RedisKeys.goodsDetail(id)));
         }

@@ -28,6 +28,7 @@ import com.qinghe.life.service.OrderService;
 import com.qinghe.life.service.OrderTimeoutCancelService;
 import com.qinghe.life.service.impl.OrderCancellationService;
 import com.qinghe.life.task.OrderPaymentTimeoutTask;
+import com.qinghe.life.utils.RedisKeys;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.vo.UserDTO;
 import org.junit.jupiter.api.AfterEach;
@@ -63,7 +64,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 })
 class OrderTimeoutCancelIntegrationTest {
     private static final String MARKER = "ORDER_TIMEOUT_TEST_";
-    private static final String LOCK_NAME = "qh:lock:order:timeout-cancel";
 
     @Autowired private OrderService orderService;
     @Autowired private OrderTimeoutCancelService timeoutCancelService;
@@ -186,7 +186,7 @@ class OrderTimeoutCancelIntegrationTest {
     @Test
     void taskSkipsWhenLockIsHeldAndRunsAfterRelease() throws Exception {
         Order expired = order(OrderStatus.PENDING_PAY, LocalDateTime.now().minusMinutes(1));
-        RLock lock = redissonClient.getLock(LOCK_NAME);
+        RLock lock = redissonClient.getLock(RedisKeys.orderTimeoutLock());
         CountDownLatch acquired = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         ExecutorService executor = Executors.newSingleThreadExecutor();

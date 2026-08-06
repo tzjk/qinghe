@@ -23,6 +23,7 @@ public class CouponVO {
     private Long shopId;
     private Integer perUserLimit;
     private String status;
+    private String couponStatus;
     private boolean claimed;
     private Long userCouponId;
     private String userCouponStatus;
@@ -35,7 +36,7 @@ public class CouponVO {
         view.setAvailableStock(coupon.getAvailableStock()); view.setReceiveStartTime(coupon.getReceiveStartTime());
         view.setReceiveEndTime(coupon.getReceiveEndTime()); view.setUseStartTime(coupon.getUseStartTime());
         view.setUseEndTime(coupon.getUseEndTime()); view.setShopId(coupon.getShopId());
-        view.setPerUserLimit(coupon.getPerUserLimit()); view.setStatus(coupon.getStatus());
+        view.setPerUserLimit(coupon.getPerUserLimit()); view.setStatus(coupon.getStatus()); view.setCouponStatus(coupon.getCouponStatus());
         return view;
     }
 

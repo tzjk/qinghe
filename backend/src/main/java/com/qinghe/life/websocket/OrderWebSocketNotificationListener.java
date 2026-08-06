@@ -6,6 +6,8 @@ import com.qinghe.life.enums.OrderStatus;
 import com.qinghe.life.event.OrderStatusChangedEvent;
 import com.qinghe.life.vo.OrderWebSocketMessageVO;
 import java.time.LocalDateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -13,6 +15,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 /** Converts committed order events to safe user/admin WebSocket messages. */
 @Component
 public class OrderWebSocketNotificationListener {
+    private static final Logger log = LoggerFactory.getLogger(OrderWebSocketNotificationListener.class);
     private final OrderWebSocketNotifier notifier;
 
     public OrderWebSocketNotificationListener(OrderWebSocketNotifier notifier) {
@@ -23,14 +26,19 @@ public class OrderWebSocketNotificationListener {
     public void onOrderStatusChanged(OrderStatusChangedEvent event) {
         Order order = event.getOrder();
         OrderNotificationReason reason = event.getReason();
-        notifier.notifyUser(order.getUserId(), message(userType(reason), order, summary(reason)));
-        notifier.notifyAdmins(message(adminType(reason), order, summary(reason)));
+        OrderWebSocketMessageVO userMessage = message(userType(reason), order, summary(reason));
+        OrderWebSocketMessageVO adminMessage = message(adminType(reason), order, summary(reason));
+        log.info("订单 WebSocket 事件提交后开始推送，reason={}, orderId={}, orderNo={}, adminType={}",
+                reason, order.getId(), order.getOrderNo(), adminMessage.getMessageType());
+        notifier.notifyUser(order.getUserId(), userMessage);
+        notifier.notifyAdmins(adminMessage);
     }
 
     private String userType(OrderNotificationReason reason) {
         switch (reason) {
             case CREATED: return "ORDER_CREATED";
             case PAID: return "ORDER_PAID";
+            case USER_REMINDER: return "ORDER_REMINDER_SENT";
             case USER_CANCELLED: return "ORDER_CANCELLED";
             case TIMEOUT_CANCELLED: return "ORDER_TIMEOUT_CANCELLED";
             case ACCEPTED: return "ORDER_ACCEPTED";
@@ -44,6 +52,9 @@ public class OrderWebSocketNotificationListener {
         if (reason == OrderNotificationReason.CREATED) {
             return "ADMIN_NEW_ORDER";
         }
+        if (reason == OrderNotificationReason.USER_REMINDER) {
+            return "ADMIN_ORDER_REMINDER";
+        }
         if (reason == OrderNotificationReason.USER_CANCELLED || reason == OrderNotificationReason.TIMEOUT_CANCELLED) {
             return "ADMIN_ORDER_CANCELLED";
         }
@@ -54,6 +65,7 @@ public class OrderWebSocketNotificationListener {
         switch (reason) {
             case CREATED: return "订单已创建";
             case PAID: return "订单已支付";
+            case USER_REMINDER: return "客户催单，请及时处理";
             case USER_CANCELLED: return "订单已取消";
             case TIMEOUT_CANCELLED: return "订单因支付超时已取消";
             case ACCEPTED: return "订单已接单";

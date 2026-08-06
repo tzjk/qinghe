@@ -50,6 +50,13 @@ public class OrderController {
         return Result.success(orderService.simulatePay(orderId));
     }
 
+    @OperateLog(module = "订单", action = "催单")
+    @PostMapping("/{orderId}/reminder")
+    public Result<Void> remind(@PathVariable Long orderId) {
+        orderService.remind(orderId);
+        return Result.success();
+    }
+
     @DeleteMapping("/{orderId}")
     public Result<Void> cancel(@PathVariable Long orderId) {
         orderService.cancel(orderId);

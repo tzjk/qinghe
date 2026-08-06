@@ -16,6 +16,8 @@ public class CatalogCacheProperties {
     private int lockMaxRetries;
     private int evictMaxRetries;
     private long evictRetryMillis;
+    private long hotShopLogicalTtlMinutes;
+    private long hotShopPhysicalTtlMinutes;
 
     public long getShopTtlMinutes() { return shopTtlMinutes; }
     public void setShopTtlMinutes(long shopTtlMinutes) { this.shopTtlMinutes = shopTtlMinutes; }
@@ -37,4 +39,8 @@ public class CatalogCacheProperties {
     public void setEvictMaxRetries(int evictMaxRetries) { this.evictMaxRetries = evictMaxRetries; }
     public long getEvictRetryMillis() { return evictRetryMillis; }
     public void setEvictRetryMillis(long evictRetryMillis) { this.evictRetryMillis = evictRetryMillis; }
+    public long getHotShopLogicalTtlMinutes() { return hotShopLogicalTtlMinutes; }
+    public void setHotShopLogicalTtlMinutes(long hotShopLogicalTtlMinutes) { this.hotShopLogicalTtlMinutes = hotShopLogicalTtlMinutes; }
+    public long getHotShopPhysicalTtlMinutes() { return hotShopPhysicalTtlMinutes; }
+    public void setHotShopPhysicalTtlMinutes(long hotShopPhysicalTtlMinutes) { this.hotShopPhysicalTtlMinutes = hotShopPhysicalTtlMinutes; }
 }

@@ -8,6 +8,8 @@ import lombok.Data;
 public class CouponClaimVO {
     private boolean claimed;
     private Long userCouponId;
+    private Long orderId;
+    private String orderStatus;
     private String claimStatus;
     private String message;
 
@@ -19,8 +21,11 @@ public class CouponClaimVO {
         return result(true, userCoupon == null ? null : userCoupon.getId(), CouponClaimStatus.ALREADY_CLAIMED, "该优惠券已领取，请勿重复领取");
     }
 
-    public static CouponClaimVO seckillAccepted() {
-        return result(false, null, CouponClaimStatus.CLAIM_SUCCESS, "Seckill claim accepted");
+    public static CouponClaimVO seckillAccepted(Long orderId) {
+        CouponClaimVO view = result(false, null, CouponClaimStatus.CLAIM_SUCCESS, "秒杀订单已受理");
+        view.setOrderId(orderId);
+        view.setOrderStatus("ACCEPTED");
+        return view;
     }
 
     public static CouponClaimVO unavailable(CouponClaimStatus claimStatus, String message) {

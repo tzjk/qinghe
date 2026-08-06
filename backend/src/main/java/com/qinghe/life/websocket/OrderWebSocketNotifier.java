@@ -50,6 +50,9 @@ public class OrderWebSocketNotifier {
             }
             try {
                 session.sendMessage(new TextMessage(payload));
+                log.info("订单 WebSocket 消息已发送，target={}, sessionId={}, type={}, orderId={}, orderNo={}, summary={}",
+                        admin ? "ADMIN" : "USER", entry.getKey(), message.getMessageType(), message.getOrderId(),
+                        message.getOrderNo(), message.getSummary());
             } catch (IOException | RuntimeException exception) {
                 log.warn("订单 WebSocket 发送失败，sessionId={}, type={}, orderId={}, error={}",
                         entry.getKey(), message.getMessageType(), message.getOrderId(), exception.getClass().getSimpleName());

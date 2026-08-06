@@ -270,6 +270,7 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 | GET | `/api/orders` | 当前用户 | 支持 `page`、`size`、`status`；仅返回本人安全订单摘要、状态编码/中文名与批量明细。 |
 | GET | `/api/orders/{orderId}` | 当前用户 | 仅返回本人订单；地址使用订单快照。 |
 | POST | `/api/orders/{orderId}/simulate-pay` | 当前用户 | 模拟支付；仅限未超时的 `PENDING_PAY`，服务端使用订单 `payAmount`。 |
+| POST | `/api/orders/{orderId}/reminder` | 当前用户 | 催单；仅订单本人且状态为 `PAID`、`ACCEPTED` 或 `DELIVERING`，无请求体。成功后提交事务事件并通知业务管理员。 |
 | DELETE | `/api/orders/{orderId}` | 当前用户 | 仅取消 `PENDING_PAY`；条件更新成功后事务内按订单明细恢复库存，不恢复购物车。 |
 | GET | `/api/admin/orders` | 管理员 | 支持订单号关键词、状态、分页；用户手机号脱敏。 |
 | GET | `/api/admin/orders/{orderId}` | 管理员 | 返回订单快照、明细和必要配送地址。 |
@@ -290,7 +291,8 @@ M3A 购物车接口已通过真实集成测试：返回项读取当前商品名�
 
 - Token 不进入 URL、响应体或日志。无 Token、无效 Token、角色不匹配及已失效会话均拒绝握手；同一用户的多标签页/设备可同时连接。
 - 每帧均为专用安全消息对象，不发送完整 `Order` 实体：`messageType`、`orderId`、`orderNo`、`orderStatus`、`statusText`、`occurredAt`、`summary`。
-- 用户消息类型：`ORDER_CREATED`、`ORDER_PAID`、`ORDER_CANCELLED`、`ORDER_TIMEOUT_CANCELLED`、`ORDER_ACCEPTED`、`ORDER_DELIVERING`、`ORDER_COMPLETED`。管理员消息类型：`ADMIN_NEW_ORDER`、`ADMIN_ORDER_CANCELLED`、`ADMIN_ORDER_STATUS_CHANGED`。
+- 用户消息类型：`ORDER_CREATED`、`ORDER_PAID`、`ORDER_REMINDER_SENT`、`ORDER_CANCELLED`、`ORDER_TIMEOUT_CANCELLED`、`ORDER_ACCEPTED`、`ORDER_DELIVERING`、`ORDER_COMPLETED`。管理员消息类型：`ADMIN_NEW_ORDER`、`ADMIN_ORDER_REMINDER`、`ADMIN_ORDER_CANCELLED`、`ADMIN_ORDER_STATUS_CHANGED`。`summary` 为消息内容字段。
+- 当前订单数据模型没有店铺负责人/商家账号关联；因此业务侧连接以既有授权管理员身份为边界，不向普通用户或未认证连接推送。若以后引入店铺负责人关系，再将管理员会话按该授权关系进一步分组。
 - WebSocket 只作状态变化提醒。首次加载、重连或漏消息后，客户端必须通过既有 HTTP 订单接口获取真实状态。
 ## 2026-07-25 管理员营业报表
 

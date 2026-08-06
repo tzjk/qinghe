@@ -6,6 +6,7 @@ package com.qinghe.life.enums;
 public enum OrderNotificationReason {
     CREATED,
     PAID,
+    USER_REMINDER,
     USER_CANCELLED,
     TIMEOUT_CANCELLED,
     ACCEPTED,

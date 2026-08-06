@@ -2,14 +2,12 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { acceptAdminOrder, completeAdminOrder, deliverAdminOrder, getAdminOrderDetail, getAdminOrders } from '../api/admin-order'
-import { connectOrderWebSocket } from '../utils/order-websocket'
 
 const loading = ref(false); const detailVisible = ref(false); const detail = ref(null); const operating = ref(null)
 const query = reactive({ page: 1, size: 10, keyword: '', status: '' }); const result = reactive({ records: [], total: 0 })
 const statuses = [['', '全部状态'], ['PENDING_PAY', '待支付'], ['PAID', '已支付'], ['ACCEPTED', '已接单'], ['DELIVERING', '配送中'], ['COMPLETED', '已完成'], ['CANCELLED', '已取消']]
 const money = (value) => Number(value || 0).toFixed(2)
 const statusRank = { PENDING_PAY: 10, PAID: 20, ACCEPTED: 30, DELIVERING: 40, COMPLETED: 50, CANCELLED: 60 }
-let closeWebSocket = () => {}
 async function load() { loading.value = true; try { const page = await getAdminOrders({ ...query, keyword: query.keyword || undefined, status: query.status || undefined }); result.records = page.records || []; result.total = page.total || 0 } catch (error) { ElMessage.error(error.message || '订单列表加载失败') } finally { loading.value = false } }
 function search() { query.page = 1; load() }
 async function showDetail(row) { detailVisible.value = true; try { detail.value = await getAdminOrderDetail(row.orderId) } catch (error) { ElMessage.error(error.message || '订单详情加载失败') } }
@@ -24,11 +22,10 @@ function applyAdminMessage(message) {
     detail.value.status = message.orderStatus
     detail.value.statusName = message.statusText
   }
-  ElMessage.info(message.summary)
   load()
 }
-onMounted(() => { load(); closeWebSocket = connectOrderWebSocket('admin', applyAdminMessage) })
-onBeforeUnmount(() => closeWebSocket())
+onMounted(() => { load(); window.addEventListener('qinghe-admin-order-notification', applyAdminMessage) })
+onBeforeUnmount(() => window.removeEventListener('qinghe-admin-order-notification', applyAdminMessage))
 </script>
 
 <template>

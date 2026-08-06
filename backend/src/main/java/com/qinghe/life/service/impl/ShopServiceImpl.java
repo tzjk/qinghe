@@ -458,8 +458,7 @@ public class ShopServiceImpl implements ShopService {
     }
 
     private ShopVO cachedDetail(Long id) {
-        ShopVO result = catalogCache.getObject(RedisKeys.shopDetail(id), RedisKeys.shopLock(id), ShopVO.class,
-                cacheProperties.getShopTtlMinutes(), () -> {
+        ShopVO result = catalogCache.getHotObject(RedisKeys.shopDetail(id), RedisKeys.shopLock(id), ShopVO.class, () -> {
                     Shop shop = shopMapper.selectById(id);
                     return shop == null || !Integer.valueOf(1).equals(shop.getStatus()) ? null : ShopVO.fromShop(shop);
                 });
