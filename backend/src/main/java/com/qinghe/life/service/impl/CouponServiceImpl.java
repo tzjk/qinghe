@@ -18,6 +18,7 @@ import com.qinghe.life.service.CouponSeckillService;
 import com.qinghe.life.utils.UserContext;
 import com.qinghe.life.vo.CouponVO;
 import com.qinghe.life.vo.CouponClaimVO;
+import com.qinghe.life.vo.SeckillOrderAcceptanceVO;
 import com.qinghe.life.vo.UserCouponVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -109,7 +110,8 @@ public class CouponServiceImpl implements CouponService {
 
     @Override
     public CouponClaimVO claimSeckill(Long couponId) {
-        return couponSeckillService.claim(couponId, requireCurrentUserId());
+        SeckillOrderAcceptanceVO accepted = couponSeckillService.seckill(couponId);
+        return CouponClaimVO.seckillAccepted(accepted.getOrderId());
     }
 
     @Override

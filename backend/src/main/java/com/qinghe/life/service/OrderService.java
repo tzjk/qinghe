@@ -17,6 +17,8 @@ public interface OrderService {
 
     OrderVO simulatePay(Long orderId);
 
+    void remind(Long orderId);
+
     void cancel(Long orderId);
 
     PageResult<AdminOrderVO> adminPage(AdminOrderQuery query);

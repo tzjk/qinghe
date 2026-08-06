@@ -2,6 +2,7 @@ package com.qinghe.life.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.qinghe.life.dto.AdminGoodsCategoryQuery;
+import com.qinghe.life.cache.CatalogCache;
 import com.qinghe.life.dto.GoodsCategorySaveRequest;
 import com.qinghe.life.dto.GoodsCategoryStatusRequest;
 import com.qinghe.life.dto.GoodsCategoryUpdateRequest;
@@ -14,21 +15,25 @@ import com.qinghe.life.mapper.GoodsMapper;
 import com.qinghe.life.mapper.ShopMapper;
 import com.qinghe.life.service.AdminGoodsCategoryService;
 import com.qinghe.life.vo.GoodsCategoryVO;
+import com.qinghe.life.utils.RedisKeys;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AdminGoodsCategoryServiceImpl implements AdminGoodsCategoryService {
     private final GoodsCategoryMapper goodsCategoryMapper;
     private final GoodsMapper goodsMapper;
     private final ShopMapper shopMapper;
+    private final CatalogCache catalogCache;
 
     public AdminGoodsCategoryServiceImpl(GoodsCategoryMapper goodsCategoryMapper, GoodsMapper goodsMapper,
-                                         ShopMapper shopMapper) {
+                                         ShopMapper shopMapper, CatalogCache catalogCache) {
         this.goodsCategoryMapper = goodsCategoryMapper;
         this.goodsMapper = goodsMapper;
         this.shopMapper = shopMapper;
+        this.catalogCache = catalogCache;
     }
 
     @Override
@@ -45,6 +50,7 @@ public class AdminGoodsCategoryServiceImpl implements AdminGoodsCategoryService 
     }
 
     @Override
+    @Transactional
     public GoodsCategoryVO create(GoodsCategorySaveRequest request) {
         requireEnabledShop(request.getShopId());
         String name = normalizedName(request.getName());
@@ -57,10 +63,12 @@ public class AdminGoodsCategoryServiceImpl implements AdminGoodsCategoryService 
         if (goodsCategoryMapper.insert(category) != 1) {
             throw new BusinessException("商品分类保存失败，请稍后重试");
         }
+        invalidateShopGoodsCache(category.getShopId());
         return toVO(category);
     }
 
     @Override
+    @Transactional
     public GoodsCategoryVO update(Long id, GoodsCategoryUpdateRequest request) {
         GoodsCategory category = requireCategory(id);
         String name = normalizedName(request.getName());
@@ -70,16 +78,19 @@ public class AdminGoodsCategoryServiceImpl implements AdminGoodsCategoryService 
         if (goodsCategoryMapper.updateById(category) != 1) {
             throw new BusinessException("商品分类保存失败，请稍后重试");
         }
+        invalidateShopGoodsCache(category.getShopId());
         return toVO(category);
     }
 
     @Override
+    @Transactional
     public void updateStatus(Long id, GoodsCategoryStatusRequest request) {
         GoodsCategory category = requireCategory(id);
         category.setStatus(request.statusValue());
         if (goodsCategoryMapper.updateById(category) != 1) {
             throw new BusinessException("商品分类状态保存失败，请稍后重试");
         }
+        invalidateShopGoodsCache(category.getShopId());
     }
 
     private GoodsCategoryVO toVO(GoodsCategory category) {
@@ -118,5 +129,9 @@ public class AdminGoodsCategoryServiceImpl implements AdminGoodsCategoryService 
             throw new BusinessException("商品分类名称不能为空");
         }
         return value;
+    }
+
+    private void invalidateShopGoodsCache(Long shopId) {
+        catalogCache.evictAfterCommit(java.util.Collections.singletonList(RedisKeys.shopGoods(shopId)));
     }
 }

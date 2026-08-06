@@ -1,5 +1,46 @@
 # 青禾校园生活服务系统 V1.0 开发计划
 
+## 2026-08-05 Goods card data rendering repair
+
+- **Status:** source repair complete; live deployment verification pending the
+  normal restart of the already-running backend outside this task.
+- **Cause and repair:** `CachedGoods` omitted getters for description, price,
+  and coverImage, so Redis snapshots lost those fields. Added the getters and
+  a null-only fallback to the current database-loaded Goods entity for legacy
+  snapshots. No Vue mapping, database data, Redis key, cart, or Agent logic was
+  changed.
+- **Evidence:** live pre-change endpoint comparison isolated product 124: direct
+  MySQL-backed responses contained price 5.00, description, and coverImage,
+  while the cached shop endpoint returned those fields as null. Focused Maven
+  cache regression tests passed after a scoped build-permission retry.
+
+## 2026-08-05 Agent conversation capability upgrade
+
+- **Status:** complete. This is one bounded Agent-service milestone; Java login, Spring controllers, databases, Redis, frontend, MCP, RAG, LangGraph, Multi-Agent, and Tool write permissions remain unchanged.
+- **Routing:** greeting/help and focused clarification remain local. Safe ordinary questions use the configured real model with a compact recent-conversation reference. Explicit campus business questions retain their read-only Spring Tool allow-lists and the model summarizes returned Tool data.
+- **Follow-ups:** public shop id/name references support `第一家` and `它` product follow-ups through `get_shop_goods`; relative price phrasing such as `再便宜一点` produces one precise clarification when the next safe query is ambiguous.
+- **Verification:** focused Agent tests passed (`30 passed`, with only the known unwritable `.pytest_cache` warning). A real local seven-prompt acceptance run reached the configured provider and Spring service: local greeting/help, promotions Tool, shop search Tool, first-shop goods Tool, real general advice, and structured rejection of the attempted order deletion. The temporary Agent listener was stopped after verification.
+
+## 2026-08-05 Agent small-scope streaming performance optimization
+
+- **Status:** complete. No new user function, Tool permission, retry, Java business/login, database/Redis, MCP, RAG, LangGraph, or multi-agent capability was added.
+- **Streaming and timing:** real OpenAI-compatible Provider deltas now pass directly to `/api/v1/chat/stream`; `answer.completed` and structured logs record total, Tool, Java HTTP, Provider, and first-output time. Non-streaming `/api/v1/chat` remains available.
+- **Context reduction:** promotion and campus-shop recommendation now each expose one read-only schema, preserving the deterministic single-Tool selection skip; prior Tool schemas are no longer injected when an explicit intent allow-list exists.
+- **Evidence:** 53 focused tests passed. Final exact local SSE prompts measured greeting 4 ms total; promotion 5,028 ms total / 4,623 ms first output / 26 ms Tool / 26 ms Java / 4,997 ms Provider; shop recommendation 2,595 ms total / 2,119 ms first output / 53 ms Tool / 53 ms Java / 2,536 ms Provider. Early stream close was healthy and the temporary Agent was stopped.
+
+## 2026-08-05 Campus Assistant response tone refinement
+
+- **Status:** complete. This is a response-layer wording update only; Tool registration/selection, Spring/Java interfaces, login, authorization, write-operation rejection, and database/Redis state remain unchanged.
+- **Style:** replies are now friendly and natural without emojis or excessive role-play. They answer first, then provide a practical next question for empty, incomplete, or unsupported requests.
+- **Verification:** 38 focused tests passed. Temporary real-provider validation confirmed the revised greeting/help, friendly Tool-grounded promotion response, and preserved delete-order rejection; controlled offline data verified the no-promotion wording.
+
+## 2026-08-05 Campus Assistant SSE render repair
+
+- **Status:** complete. This was a single front-end defect-fix milestone, with no expansion into Agent capabilities, MCP, or performance work.
+- **Cause and repair:** the SSE callback changed a raw assistant-message object instead of the reactive proxy stored in `messages.value`. The composable now locates and updates the reactive item by id; it processes `answer.completed` as an explicit terminal event and retains cleanup for aborts and errors.
+- **Verification:** front-end production build passed. Browser checks on the configured localhost origin showed “你好” and “今天有什么优惠” in the already-open drawer, no duplicate assistant answer, terminal loading cleanup, and successful stop cleanup. The unauthenticated dorm test correctly used the preserved login guard.
+- **Files:** `frontend/src/composables/useCampusAssistant.js`, `task_plan.md`, `progress.md`, `findings.md`, and `PROJECT_PLAN.md`. `frontend/src/api/agent.js`, the assistant list/item/drawer components, and `agent-service/app/api/chat.py` were inspected but unchanged.
+
 ## 2026-07-17 管理端商品筛选编译修复（完成）
 
 - `GET /api/admin/goods` 查询字段保持 `shopId`、`shopCategoryId`、`goodsCategoryId`、`saleStatus`、`keyword`；不再使用含义不明的查询 `categoryId`。
@@ -153,6 +194,12 @@
 - **最终命令行验收：** 已重新静态核验唯一的地址/购物车 API 和页面、`http.js` 复用、地址路由、购物车导航、地址入口、详情加购与无订单调用；`D:/develop/NodeJS/npm.cmd run build` 通过（1681 个模块、生成 `dist`）；`mvn test` 通过（4 项、0 失败、0 错误）；`mvn clean package -DskipTests` 通过（87 个主源码、3 个测试源码、JAR 已生成）。8090 未监听，未执行 curl；5174 正在监听。未启动或停止进程，未使用浏览器。
 - **停止点：** M3 继续保持 `in_progress`；下一批为订单创建与查询后端。未实现订单、支付、优惠券或 M3B。
 
+#### 订单超时与实时提醒验收（2026-08-05，已完成）
+
+- 已核验并保留现有超时取消：每分钟扫描已过 `payExpireTime` 的 `PENDING_PAY` 订单，使用 Redisson 任务锁和数据库条件状态更新；只有关单更新成功才在同一事务恢复库存、释放订单券、写关闭时间/原因与操作日志。支付和关单竞争时仅一个条件更新可成功。
+- 新增用户催单 `POST /api/orders/{orderId}/reminder`：仅订单本人、且订单为 `PAID/ACCEPTED/DELIVERING`。它复用提交后事件与认证 WebSocket，向现有业务管理员会话发送 `ADMIN_ORDER_REMINDER`；订单模型没有店铺负责人字段，因此未虚构按店铺商家分流。
+- 验证：聚焦 Maven 测试共 26 项通过（提醒服务 2、超时取消/库存/锁 7、WebSocket 17），前端 `npm.cmd run build` 成功。测试只使用自身标记化数据和精确 Redis 会话 Key；未启动服务或执行 Git。
+
 #### M2A：验证码获取与登录链路修复（awaiting_manual_verification）
 
 - **范围：** 仅修复登录页获取验证码交互、验证码 Redis 存取、验证码登录校验、开发环境测试方式和认证回归测试；不修改地址、购物车、首页、商铺、商品、订单或数据库结构。
@@ -228,3 +275,24 @@
 - **第二批验证：** `FollowServiceBehaviorTest` 与 `CommonFollowBehaviorTest` 实际运行 18/0/0/0。覆盖提交后 Set 缓存、数据库/Redis 回退、列表和公共 VO 安全；无真实 Redis/MySQL/SQL 操作。
 
 - **完成验证：** 新增点赞前五 10 项和 Feed 15 项后，Mockito 业务行为测试累计 59 passed；静态 DynamicTest 65 passed、普通静态契约 2 passed、受控真实入口 1 skipped。后端 compile 与前端 build 成功。未连接真实 Redis/MySQL、未执行 SQL、未修改生产业务代码或 agent-service；现可在人工授权的隔离环境进入真实联调，Git 提交仍待人工审核和明确授权。
+
+## 2026-08-05 Agent 定向对话能力细化
+
+- **状态：** complete。
+- **范围：** 在既有 Agent 会话能力基础上补齐安全普通对话、单一澄清追问、店铺指代、相对价格追问和 ToolResult 的排序/推荐；未接入 MCP、RAG、LangGraph、写操作或 Java 改动。
+- **实现：** 新增“刚才那个/刚才那家”指代和“更便宜”相对价格识别；店铺公开引用按评分顺序保存，使“第一家”与显示推荐一致；本地店铺和优惠券答复按公开评分、优惠力度与门槛给出有条件的推荐。`general_chat` 无 Tool 时不再附加空的 `工具结果：[]`，非空只读 ToolResult 的安全提示保持原样。
+- **安全：** `帮我删除最近订单` 等带插入词的写请求在 Tool 选择前被拒绝；未增加写 Tool、任意 URL、Token 绕过或 Java 权限变更。
+- **验证：** 39 项定向测试通过，仅有既有 `.pytest_cache` 无写权限警告。临时 8102 实测七条指定问题均通过：普通学习建议由真实模型零 Tool 回答；店铺推荐/第一家商品依次调用 `search_shops`、`get_shop_goods`；相对价格走本地澄清；两条优惠问题调用 `get_today_promotions`；删除最近订单返回安全拒绝。临时进程已停止，既有 Spring 8090 未改动。
+
+## 2026-08-05 校园助手悬浮交互优化
+
+- **状态：** partial（实现和构建完成；拖动后位置持久化的真实鼠标/触屏验收待人工确认）。
+- **范围：** 仅修改 Vue 3 前端。新增可替换的本地 SVG/CSS 人物、鼠标/触屏拖动、位置持久化、人物卡片与咨询状态展示；未修改 Agent、Java、接口、Token、会话或 SSE 协议。
+- **实现：** 悬浮按钮统一使用 PointerEvent；移动距离超过 5px 才认定拖动，松手后保存位置至 localStorage，位置始终限制在视口内。按钮点击先展示带挥手动画的人物卡片，卡片提供关闭和“开始咨询”；后者复用既有聊天抽屉。SVG/CSS 人物提供待机浮动、眨眼、挥手、思考和说话状态，并在抽屉内显示紧凑状态。
+- **验证：** 前端生产构建通过（1780 modules）；浏览器确认点击人物卡片、开始咨询、请求思考、公开优惠流式回答、关闭后重开和移动端边界/无滚动策略。当前浏览器自动化的拖动命令不分发 PointerEvent，故拖动后的 localStorage 恢复未能自动化复现；代码路径和构建均已核验，且该命令未误打开助手。临时 Agent 已停止，8100 已释放。
+# 2026-08-05 M3B 限量优惠券秒杀下单（awaiting_real_integration）
+
+- 范围：仅 `backend` 与必要 `frontend`；未改 `agent-service`、普通 `qh_order`、Git 或任何连接密码。新增独立 `qh_seckill_coupon_order` 迁移，SQL 仅生成未执行。
+- 实现：Redis ID Worker 采用秒级时间戳高位和 Redis 当日 `INCR` 低位；Lua 原子受理库存/一人一单并 XADD `qh:stream:seckill-orders`；状态为 `ACCEPTED/PROCESSING/SUCCESS/FAILED`。消费者以 Redisson `couponId + userId` 锁和独立事务 Bean 条件扣减 `qh_coupon.available_stock`、发券和创建订单，提交后 ACK；支持 Pending 认领、退避、DLQ 和无数据库订单时的幂等补偿。
+- 验证：后端主/测试源码编译通过；离线 Redis Key/Lua 契约与 2,000 次 ID 并发唯一性测试为 8/8；前端 Vite 生产构建通过。真实 Stream 集成测试启动时因现有 Redis 要求认证而未建上下文，5 个用例均未进入断言，不能将其记为通过。
+- 停止点：需要人工审核并执行 `backend/src/main/resources/sql/seckill_coupon_increment.sql`，并提供已配置的 Redis 认证环境后，才可复测 Lua、Stream、并发无超卖和重复消息的端到端断言。

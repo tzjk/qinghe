@@ -11,7 +11,7 @@ public class SeckillStreamErrorClassifier {
         if (exception instanceof IllegalArgumentException) return Classification.invalid("STREAM_MESSAGE_INVALID");
         if (exception instanceof BusinessException) {
             BusinessException business = (BusinessException) exception;
-            return business.getCode() == 400 ? Classification.invalid("STREAM_MESSAGE_INVALID") : Classification.permanent("STREAM_RETRY_EXHAUSTED");
+            return business.getCode() == 400 ? Classification.invalid("STREAM_MESSAGE_INVALID") : Classification.retryable("PERSISTENCE_RETRYABLE");
         }
         if (exception instanceof DataAccessException) return Classification.retryable("DATABASE_TEMPORARY");
         return Classification.retryable("PERSISTENCE_TEMPORARY");

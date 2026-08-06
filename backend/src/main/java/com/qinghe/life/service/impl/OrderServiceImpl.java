@@ -266,6 +266,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public void remind(Long orderId) {
+        Long userId = requireCurrentUserId();
+        Order order = requireUserOrder(orderId, userId);
+        if (!isReminderAllowed(order.getStatus())) {
+            throw new BusinessException(409, "当前订单状态不支持催单");
+        }
+        orderNotificationPublisher.publishAfterCommit(order, OrderNotificationReason.USER_REMINDER);
+    }
+
+    @Override
     public void cancel(Long orderId) {
         Long userId = requireCurrentUserId();
         Order order = requireUserOrder(orderId, userId);
@@ -349,6 +360,12 @@ public class OrderServiceImpl implements OrderService {
             case COMPLETED: return OrderNotificationReason.COMPLETED;
             default: throw new IllegalArgumentException("Unsupported notification status");
         }
+    }
+
+    private boolean isReminderAllowed(String status) {
+        return OrderStatus.PAID.getCode().equals(status)
+                || OrderStatus.ACCEPTED.getCode().equals(status)
+                || OrderStatus.DELIVERING.getCode().equals(status);
     }
 
     private List<OrderVO> userViews(List<Order> orders, boolean detail) {

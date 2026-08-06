@@ -22,6 +22,9 @@ public class RedissonConfig {
         if (StringUtils.hasText(redisProperties.getPassword())) {
             server.setPassword(redisProperties.getPassword());
         }
+        if (StringUtils.hasText(redisProperties.getUsername())) {
+            server.setUsername(redisProperties.getUsername());
+        }
         return Redisson.create(config);
     }
 }

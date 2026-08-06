@@ -25,15 +25,34 @@ public final class RedisKeys {
     public static String goodsLock(Long goodsId) { return key("lock:cache:goods:") + goodsId; }
     public static String shopGoodsLock(Long shopId) { return key("lock:cache:shop-goods:") + shopId; }
     @Deprecated public static String shopNull(Long shopId) { return shopDetail(shopId); }
-    public static String couponSeckillStock(Long couponId) { return key("coupon:seckill:stock:") + couponId; }
-    public static String couponSeckillUsers(Long couponId) { return key("coupon:seckill:users:") + couponId; }
-    public static String couponSeckillMeta(Long couponId) { return key("coupon:seckill:meta:") + couponId; }
-    public static String couponSeckillReservation(String orderId) { return key("coupon:seckill:reservation:") + orderId; }
-    public static String couponSeckillStream() { return key("stream:coupon:claim"); }
-    public static String couponSeckillDlqStream() { return key("stream:coupon:claim:dlq"); }
-    public static String couponSeckillDlqIndex(String messageId) { return key("coupon:seckill:dlq-index:") + messageId; }
-    public static String couponSeckillRetry(String messageId) { return key("coupon:seckill:retry:") + messageId; }
-    public static String couponSeckillRecoveryLock() { return key("lock:coupon:seckill:pending-recovery"); }
+    public static String seckillStock(Long couponId) { return key("seckill:stock:") + couponId; }
+    public static String seckillUsers(Long couponId) { return key("seckill:users:") + couponId; }
+    public static String seckillMeta(Long couponId) { return key("seckill:meta:") + couponId; }
+    public static String seckillStream() { return key("stream:seckill-orders"); }
+    public static String seckillStatus(Long orderId) { return key("seckill:order:status:") + orderId; }
+    public static String seckillLock(Long couponId, Long userId) { return key("lock:seckill:") + couponId + ":" + userId; }
+    public static String seckillId(java.time.LocalDate date) { return key("id:seckill:") + date; }
+    public static String seckillInitLock(Long couponId) { return key("lock:seckill:init:") + couponId; }
+    public static String couponSeckillDlqStream() { return key("stream:seckill-orders:dlq"); }
+    public static String couponSeckillDlqIndex(String messageId) { return key("seckill:dlq-index:") + messageId; }
+    public static String couponSeckillRetry(String messageId) { return key("seckill:retry:") + messageId; }
+    public static String couponSeckillRecoveryLock() { return key("lock:seckill:pending-recovery"); }
+    public static String seckillTestRunMeta(String runId) { return key("seckill:test:run:") + runId + ":meta"; }
+    public static String seckillTestRunCoupons(String runId) { return key("seckill:test:run:") + runId + ":coupons"; }
+    public static String seckillTestRunUsers(String runId) { return key("seckill:test:run:") + runId + ":users"; }
+    public static String seckillTestRunTokens(String runId) { return key("seckill:test:run:") + runId + ":tokens"; }
+    public static String seckillTestRunStreamIds(String runId) { return key("seckill:test:run:") + runId + ":stream-ids"; }
+    public static String seckillTestRunAckIds(String runId) { return key("seckill:test:run:") + runId + ":ack-ids"; }
+    public static String seckillTestRunDlqIds(String runId) { return key("seckill:test:run:") + runId + ":dlq-ids"; }
+    public static String seckillTestRunOrderIds(String runId) { return key("seckill:test:run:") + runId + ":order-ids"; }
+    public static String seckillTestRunStatusKeys(String runId) { return key("seckill:test:run:") + runId + ":status-keys"; }
+    public static String seckillTestRunLockKeys(String runId) { return key("seckill:test:run:") + runId + ":lock-keys"; }
+    /* Compatibility aliases for the earlier coupon-claim implementation. */
+    public static String couponSeckillStock(Long couponId) { return seckillStock(couponId); }
+    public static String couponSeckillUsers(Long couponId) { return seckillUsers(couponId); }
+    public static String couponSeckillMeta(Long couponId) { return seckillMeta(couponId); }
+    public static String couponSeckillReservation(String orderId) { return seckillStatus(Long.valueOf(orderId)); }
+    public static String couponSeckillStream() { return seckillStream(); }
     public static String orderTimeoutLock() { return key("lock:order:timeout-cancel"); }
     public static String signIn(Long userId, String yearMonth) { return key("sign:") + userId + ":" + yearMonth; }
     public static String followings(Long userId) { return key("followings:") + userId; }
